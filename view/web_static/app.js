@@ -1,11 +1,13 @@
-const MAX_POINTS = 120;
+const MAX_POINTS = 20000;
 const WS_PERIOD_MS = 250;
 
 let liveSocket = null;
 let replayMode = false;
 let wsFailures = 0;
 let pollingTimer = null;
-let requestedLiveMode = null;
+let modeOverrideOnce = null;
+let sampleBuffer = [];
+let lastFrameId = null;
 
 function fmt(value, decimals = 3, unit = "") {
   if (value === null || value === undefined) {
@@ -295,7 +297,9 @@ async function pollOnce() {
   const status = await statusResp.json();
   const latestPayload = await latestResp.json();
   const historyPayload = await historyResp.json();
-  updateView(status, latestPayload.sample, historyPayload.samples || []);
+  sampleBuffer = historyPayload.samples || [];
+  trimSampleBuffer();
+  updateView(status, latestPayload.sample, sampleBuffer);
 }
 
 function startPollingFallback() {
@@ -335,6 +339,8 @@ async function switchSource(mode) {
     throw new Error(payload.detail || "Erreur switch source");
   }
   replayMode = false;
+  sampleBuffer = [];
+  lastFrameId = null;
   connectLive();
 }
 
@@ -353,8 +359,9 @@ function connectLive() {
     points: String(MAX_POINTS),
     period_ms: String(WS_PERIOD_MS),
   });
-  if (requestedLiveMode) {
-    params.set("mode", requestedLiveMode);
+  if (modeOverrideOnce) {
+    params.set("mode", modeOverrideOnce);
+    modeOverrideOnce = null;
   }
   const url = `${scheme}://${window.location.host}/ws/live?${params.toString()}`;
   const ws = new WebSocket(url);
@@ -367,7 +374,24 @@ function connectLive() {
       setText("mode-label", `Mode: erreur switch (${payload.error})`);
       return;
     }
-    updateView(payload.status, payload.latest, payload.history);
+    if (Array.isArray(payload.history)) {
+      sampleBuffer = payload.history;
+      lastFrameId = sampleBuffer.length ? sampleBuffer[sampleBuffer.length - 1].frame_id : null;
+    }
+    if (Array.isArray(payload.append) && payload.append.length > 0) {
+      payload.append.forEach((sample) => {
+        if (!sample || sample.frame_id === undefined || sample.frame_id === null) {
+          return;
+        }
+        if (lastFrameId !== null && sample.frame_id === lastFrameId) {
+          return;
+        }
+        sampleBuffer.push(sample);
+        lastFrameId = sample.frame_id;
+      });
+    }
+    trimSampleBuffer();
+    updateView(payload.status, payload.latest, sampleBuffer);
   };
 
   ws.onclose = () => {
@@ -468,8 +492,17 @@ async function loadReplayFile(file) {
     liveSocket = null;
   }
   stopPollingFallback();
+  sampleBuffer = samples.slice(-MAX_POINTS);
+  trimSampleBuffer();
+  lastFrameId = sampleBuffer.length ? sampleBuffer[sampleBuffer.length - 1].frame_id : null;
   const status = replayStatus(samples);
-  updateView(status, status.latest, samples.slice(-MAX_POINTS));
+  updateView(status, status.latest, sampleBuffer);
+}
+
+function trimSampleBuffer() {
+  if (sampleBuffer.length > MAX_POINTS) {
+    sampleBuffer = sampleBuffer.slice(sampleBuffer.length - MAX_POINTS);
+  }
 }
 
 function initControls() {
@@ -478,9 +511,9 @@ function initControls() {
     simBtn.addEventListener("click", async () => {
       setText("mode-label", "Mode: switch vers simulé...");
       try {
-        requestedLiveMode = "sim";
         await switchSource("sim");
       } catch (err) {
+        modeOverrideOnce = "sim";
         connectLive();
       }
     });
@@ -491,9 +524,9 @@ function initControls() {
     realBtn.addEventListener("click", async () => {
       setText("mode-label", "Mode: switch vers réel...");
       try {
-        requestedLiveMode = "serial";
         await switchSource("serial");
       } catch (err) {
+        modeOverrideOnce = "serial";
         connectLive();
       }
     });

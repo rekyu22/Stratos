@@ -28,8 +28,9 @@ def _build_service() -> TelemetryService:
     baud = int(os.getenv("STRATOS_SERIAL_BAUD", "9600"))
     timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "1.0"))
     hz = float(os.getenv("STRATOS_SIM_HZ", "10.0"))
+    history_size = int(os.getenv("STRATOS_HISTORY_SIZE", "20000"))
     source = _build_source(mode=mode, port=port, baud=baud, timeout=timeout, sim_hz=hz)
-    return TelemetryService(source=source, logger=logger)
+    return TelemetryService(source=source, logger=logger, history_size=history_size)
 
 
 def _build_source(mode: str, port: str | None, baud: int, timeout: float, sim_hz: float):
@@ -91,7 +92,7 @@ def api_latest() -> Dict[str, Any]:
 
 
 @app.get("/api/history")
-def api_history(points: int = Query(default=120, ge=1, le=2000)) -> Dict[str, Any]:
+def api_history(points: int = Query(default=1200, ge=1, le=20000)) -> Dict[str, Any]:
     return {"samples": service.get_history(limit=points)}
 
 
@@ -118,7 +119,7 @@ def api_switch_source(payload: SourceSwitchRequest) -> Dict[str, Any]:
 
 
 @app.get("/api/history.csv")
-def api_history_csv(points: int = Query(default=600, ge=1, le=10000)) -> Response:
+def api_history_csv(points: int = Query(default=2000, ge=1, le=50000)) -> Response:
     samples = service.get_history(limit=points)
     output = io.StringIO()
     writer = csv.writer(output)
@@ -165,8 +166,8 @@ def api_history_csv(points: int = Query(default=600, ge=1, le=10000)) -> Respons
 @app.websocket("/ws/live")
 async def ws_live(websocket: WebSocket) -> None:
     await websocket.accept()
-    points = int(websocket.query_params.get("points", "120"))
-    points = max(1, min(points, 2000))
+    points = int(websocket.query_params.get("points", "20000"))
+    points = max(1, min(points, 50000))
     period_ms = int(websocket.query_params.get("period_ms", "250"))
     period_ms = max(100, min(period_ms, 2000))
     period_s = period_ms / 1000.0
@@ -178,25 +179,40 @@ async def ws_live(websocket: WebSocket) -> None:
         default_timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "1.0"))
         default_sim_hz = float(os.getenv("STRATOS_SIM_HZ", "10.0"))
         try:
-            new_source = _build_source(
-                mode=forced_mode,
-                port=default_port,
-                baud=default_baud,
-                timeout=default_timeout,
-                sim_hz=default_sim_hz,
-            )
-            service.switch_source(new_source)
+            current_mode = str(service.get_status().get("source_mode", ""))
+            if current_mode != forced_mode.lower():
+                new_source = _build_source(
+                    mode=forced_mode,
+                    port=default_port,
+                    baud=default_baud,
+                    timeout=default_timeout,
+                    sim_hz=default_sim_hz,
+                )
+                service.switch_source(new_source)
         except Exception as exc:
             await websocket.send_json({"error": f"switch_mode_failed: {exc}"})
 
-    last_sent_received = -1
-    last_sent_at = asyncio.get_event_loop().time()
+    loop = asyncio.get_event_loop()
+    initial_status = service.get_status()
+    initial_latest = service.get_latest()
+    initial_history = service.get_history(limit=points)
+    await websocket.send_json(
+        {
+            "status": initial_status,
+            "latest": initial_latest,
+            "history": initial_history,
+            "append": [],
+        }
+    )
+
+    last_sent_received = int(initial_status.get("frames_received", 0))
+    last_sent_at = loop.time()
 
     try:
         while True:
             status = service.get_status()
             frames_received = int(status.get("frames_received", 0))
-            now = asyncio.get_event_loop().time()
+            now = loop.time()
             should_send = False
             if frames_received != last_sent_received:
                 should_send = True
@@ -204,10 +220,14 @@ async def ws_live(websocket: WebSocket) -> None:
                 should_send = True
 
             if should_send:
+                latest = service.get_latest()
+                append = []
+                if frames_received > last_sent_received and latest is not None:
+                    append = [latest]
                 payload = {
                     "status": status,
-                    "latest": service.get_latest(),
-                    "history": service.get_history(limit=points),
+                    "latest": latest,
+                    "append": append,
                 }
                 await websocket.send_json(payload)
                 last_sent_received = frames_received

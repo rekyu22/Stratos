@@ -56,6 +56,7 @@ Sur Windows, utiliser un port de type `COM3`.
 - `STRATOS_SERIAL_PORT` : port série (`COM3`, `/dev/ttyUSB0`, ...)
 - `STRATOS_SERIAL_BAUD` : défaut `9600`
 - `STRATOS_SERIAL_TIMEOUT` : défaut `1.0`
+- `STRATOS_HISTORY_SIZE` : profondeur historique en mémoire (défaut `20000`)
 - `STRATOS_LOG` : `1` pour activer CSV, `0` pour désactiver
 - `STRATOS_HOST` : défaut `127.0.0.1`
 - `STRATOS_PORT` : défaut `8000`
