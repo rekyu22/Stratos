@@ -189,15 +189,31 @@ async def ws_live(websocket: WebSocket) -> None:
         except Exception as exc:
             await websocket.send_json({"error": f"switch_mode_failed: {exc}"})
 
+    last_sent_received = -1
+    last_sent_at = asyncio.get_event_loop().time()
+
     try:
         while True:
-            payload = {
-                "status": service.get_status(),
-                "latest": service.get_latest(),
-                "history": service.get_history(limit=points),
-            }
-            await websocket.send_json(payload)
-            await asyncio.sleep(period_s)
+            status = service.get_status()
+            frames_received = int(status.get("frames_received", 0))
+            now = asyncio.get_event_loop().time()
+            should_send = False
+            if frames_received != last_sent_received:
+                should_send = True
+            elif now - last_sent_at >= period_s:
+                should_send = True
+
+            if should_send:
+                payload = {
+                    "status": status,
+                    "latest": service.get_latest(),
+                    "history": service.get_history(limit=points),
+                }
+                await websocket.send_json(payload)
+                last_sent_received = frames_received
+                last_sent_at = now
+
+            await asyncio.sleep(0.01)
     except WebSocketDisconnect:
         return
 

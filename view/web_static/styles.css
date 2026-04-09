@@ -131,7 +131,7 @@ canvas {
   display: block;
   background: rgba(9, 13, 20, 0.75);
   border-radius: 8px;
-  min-height: 260px;
+  min-height: 300px;
 }
 
 .status-row {

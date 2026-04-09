@@ -52,6 +52,22 @@ class TestWebApp(unittest.TestCase):
                 self.assertIn("latest", payload)
                 self.assertIn("history", payload)
 
+    def test_websocket_frame_id_progression_in_sim_mode(self):
+        with TestClient(webapp.app) as client:
+            with client.websocket_connect("/ws/live?points=5&period_ms=2000&mode=sim") as websocket:
+                ids = []
+                while len(ids) < 5:
+                    payload = websocket.receive_json()
+                    latest = payload.get("latest")
+                    if not latest:
+                        continue
+                    frame_id = latest.get("frame_id")
+                    if frame_id is not None:
+                        ids.append(frame_id)
+                for i in range(1, len(ids)):
+                    self.assertGreater(ids[i], ids[i - 1])
+                    self.assertLessEqual(ids[i] - ids[i - 1], 5)
+
 
 if __name__ == "__main__":
     unittest.main()

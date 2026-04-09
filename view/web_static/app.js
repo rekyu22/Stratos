@@ -40,6 +40,38 @@ function setHealth(id, label, value, level) {
   el.textContent = `${label}: ${value}`;
 }
 
+function decimalsForSpan(span) {
+  if (span >= 100) {
+    return 0;
+  }
+  if (span >= 10) {
+    return 1;
+  }
+  if (span >= 1) {
+    return 2;
+  }
+  if (span >= 0.1) {
+    return 3;
+  }
+  if (span >= 0.01) {
+    return 4;
+  }
+  return 5;
+}
+
+function minSpanForUnit(unit) {
+  if (unit === "V") {
+    return 0.002;
+  }
+  if (unit === "m") {
+    return 0.02;
+  }
+  if (unit === "hPa") {
+    return 0.02;
+  }
+  return 0.1;
+}
+
 function drawSeries(canvasId, samples, field, color, unit) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) {
@@ -70,13 +102,27 @@ function drawSeries(canvasId, samples, field, color, unit) {
 
   let min = Math.min(...filtered);
   let max = Math.max(...filtered);
+  const rawMin = min;
+  const rawMax = max;
   if (min === max) {
-    min -= 1;
-    max += 1;
+    const half = minSpanForUnit(unit) / 2.0;
+    min -= half;
+    max += half;
+  } else {
+    const span = max - min;
+    const minSpan = minSpanForUnit(unit);
+    if (span < minSpan) {
+      const mid = (min + max) / 2.0;
+      min = mid - minSpan / 2.0;
+      max = mid + minSpan / 2.0;
+    }
   }
-  const pad = (max - min) * 0.15;
+  const span = max - min;
+  const pad = span * 0.12;
   min -= pad;
   max += pad;
+  const range = max - min;
+  const decimals = decimalsForSpan(range);
 
   const yTicks = 5;
   ctx.strokeStyle = "rgba(255,255,255,0.12)";
@@ -89,7 +135,7 @@ function drawSeries(canvasId, samples, field, color, unit) {
     ctx.moveTo(left, y);
     ctx.lineTo(left + plotWidth, y);
     ctx.stroke();
-    ctx.fillText(`${value.toFixed(2)} ${unit}`, 2, y + 3);
+    ctx.fillText(`${value.toFixed(decimals)} ${unit}`, 2, y + 3);
   }
 
   const xTicks = 5;
@@ -97,11 +143,17 @@ function drawSeries(canvasId, samples, field, color, unit) {
   const validTs = timestamps.filter((t) => Number.isFinite(t));
   const tMin = validTs.length ? Math.min(...validTs) : 0;
   const tMax = validTs.length ? Math.max(...validTs) : 1;
+  const fallbackDurationMs = Math.max((values.length - 1) * WS_PERIOD_MS, 1);
   for (let i = 0; i < xTicks; i += 1) {
     const ratio = i / (xTicks - 1);
     const x = left + ratio * plotWidth;
-    const t = tMin + ratio * (tMax - tMin);
-    const sec = (t - tMax) / 1000.0;
+    let sec = 0.0;
+    if (validTs.length >= 2 && tMax > tMin) {
+      const t = tMin + ratio * (tMax - tMin);
+      sec = (t - tMax) / 1000.0;
+    } else {
+      sec = -((1 - ratio) * fallbackDurationMs) / 1000.0;
+    }
     ctx.beginPath();
     ctx.moveTo(x, top);
     ctx.lineTo(x, top + plotHeight);
@@ -136,7 +188,12 @@ function drawSeries(canvasId, samples, field, color, unit) {
 
   const latest = filtered[filtered.length - 1];
   ctx.fillStyle = color;
-  ctx.fillText(`latest ${latest.toFixed(3)} ${unit}`, left + 6, top + 12);
+  ctx.fillText(`latest ${latest.toFixed(Math.max(3, decimals))} ${unit}`, left + 6, top + 12);
+  ctx.fillText(
+    `range ${rawMin.toFixed(Math.max(3, decimals))} .. ${rawMax.toFixed(Math.max(3, decimals))} ${unit}`,
+    left + 6,
+    top + 24
+  );
 }
 
 function updateView(status, latest, samples) {
