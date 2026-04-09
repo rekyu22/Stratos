@@ -66,6 +66,7 @@ Sur Windows, utiliser un port de type `COM3`.
 - `Jitter ms` : variabilité des intervalles inter-trames.
 - `Perte estimée %` : estimation basée sur les sauts de `frame_id`.
 - `Rejet %` : trames invalides (checksum/format) sur total reçu.
+- Graphes : axe Y gradué en unités physiques et axe X en temps relatif (secondes).
 
 ## Tests
 

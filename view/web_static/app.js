@@ -40,7 +40,7 @@ function setHealth(id, label, value, level) {
   el.textContent = `${label}: ${value}`;
 }
 
-function drawSeries(canvasId, values, color) {
+function drawSeries(canvasId, samples, field, color, unit) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) {
     return;
@@ -50,8 +50,21 @@ function drawSeries(canvasId, values, color) {
   const height = canvas.height;
   ctx.clearRect(0, 0, width, height);
 
-  const filtered = values.filter((v) => v !== null && v !== undefined);
-  if (filtered.length === 0) {
+  const values = (samples || []).map((s) => s[field]);
+  const filtered = values.filter((v) => v !== null && v !== undefined && Number.isFinite(v));
+
+  const left = 54;
+  const right = 8;
+  const top = 8;
+  const bottom = 22;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+
+  ctx.fillStyle = "rgba(186, 203, 224, 0.75)";
+  ctx.font = "11px Segoe UI, sans-serif";
+
+  if (filtered.length === 0 || values.length < 2) {
+    ctx.fillText("No data", left + 8, top + 14);
     return;
   }
 
@@ -65,30 +78,65 @@ function drawSeries(canvasId, values, color) {
   min -= pad;
   max += pad;
 
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  const yTicks = 5;
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
   ctx.lineWidth = 1;
+  for (let i = 0; i < yTicks; i += 1) {
+    const ratio = i / (yTicks - 1);
+    const y = top + ratio * plotHeight;
+    const value = max - ratio * (max - min);
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(left + plotWidth, y);
+    ctx.stroke();
+    ctx.fillText(`${value.toFixed(2)} ${unit}`, 2, y + 3);
+  }
+
+  const xTicks = 5;
+  const timestamps = (samples || []).map((s) => Date.parse(s.timestamp || ""));
+  const validTs = timestamps.filter((t) => Number.isFinite(t));
+  const tMin = validTs.length ? Math.min(...validTs) : 0;
+  const tMax = validTs.length ? Math.max(...validTs) : 1;
+  for (let i = 0; i < xTicks; i += 1) {
+    const ratio = i / (xTicks - 1);
+    const x = left + ratio * plotWidth;
+    const t = tMin + ratio * (tMax - tMin);
+    const sec = (t - tMax) / 1000.0;
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, top + plotHeight);
+    ctx.stroke();
+    ctx.fillText(`${sec.toFixed(1)}s`, x - 12, top + plotHeight + 14);
+  }
+
+  ctx.strokeStyle = "rgba(255,255,255,0.25)";
   ctx.beginPath();
-  ctx.moveTo(0, height - 1);
-  ctx.lineTo(width, height - 1);
+  ctx.rect(left, top, plotWidth, plotHeight);
   ctx.stroke();
 
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.beginPath();
-
+  let penDown = false;
   values.forEach((value, idx) => {
-    if (value === null || value === undefined) {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      penDown = false;
       return;
     }
-    const x = (idx / Math.max(values.length - 1, 1)) * width;
-    const y = height - ((value - min) / (max - min)) * height;
-    if (idx === 0) {
+    const x = left + (idx / Math.max(values.length - 1, 1)) * plotWidth;
+    const y = top + (1 - (value - min) / (max - min)) * plotHeight;
+    if (!penDown) {
       ctx.moveTo(x, y);
+      penDown = true;
     } else {
       ctx.lineTo(x, y);
     }
   });
   ctx.stroke();
+
+  const latest = filtered[filtered.length - 1];
+  ctx.fillStyle = color;
+  ctx.fillText(`latest ${latest.toFixed(3)} ${unit}`, left + 6, top + 12);
 }
 
 function updateView(status, latest, samples) {
@@ -132,13 +180,9 @@ function updateView(status, latest, samples) {
     setText("temp-bmp", fmt(latest.temp_bmp, 2, " °C"));
   }
 
-  const altitude = (samples || []).map((s) => s.altitude);
-  const pression = (samples || []).map((s) => s.pression);
-  const vbat = (samples || []).map((s) => s.v_bat);
-
-  drawSeries("chart-altitude", altitude, "#63b3ff");
-  drawSeries("chart-pression", pression, "#4fe2b5");
-  drawSeries("chart-vbat", vbat, "#ffca66");
+  drawSeries("chart-altitude", samples || [], "altitude", "#63b3ff", "m");
+  drawSeries("chart-pression", samples || [], "pression", "#4fe2b5", "hPa");
+  drawSeries("chart-vbat", samples || [], "v_bat", "#ffca66", "V");
 
   if (latest) {
     const battery = latest.v_bat;
