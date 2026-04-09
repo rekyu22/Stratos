@@ -4,8 +4,8 @@ import time
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
-from protocol import ETX, FRAME_FORMAT, STX
-from serial_reader import SerialReader
+from model.protocol import ETX, FRAME_FORMAT, STX
+from model.serial_reader import SerialReader
 
 try:
     from serial.tools import list_ports

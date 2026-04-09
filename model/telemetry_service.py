@@ -6,8 +6,8 @@ from threading import Event, Lock, Thread
 import time
 from typing import Any, Deque, Dict, Optional
 
-from logger import TelemetryLogger
-from protocol import StratosFrame, parse_frame
+from model.logger import TelemetryLogger
+from model.protocol import StratosFrame, parse_frame
 
 
 @dataclass

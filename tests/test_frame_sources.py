@@ -1,6 +1,6 @@
 import unittest
 
-from frame_sources import AutoFrameSource, SerialSourceConfig
+from model.frame_sources import AutoFrameSource, SerialSourceConfig
 
 
 class TestFrameSources(unittest.TestCase):

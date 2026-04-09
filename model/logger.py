@@ -1,7 +1,7 @@
 import csv
 import os
 from datetime import datetime
-from protocol import StratosFrame
+from model.protocol import StratosFrame
 
 LOG_DIRECTORY = "logs"
 CSV_HEADERS = [

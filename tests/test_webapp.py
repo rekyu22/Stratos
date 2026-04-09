@@ -7,7 +7,7 @@ os.environ["STRATOS_SOURCE"] = "sim"
 os.environ["STRATOS_SIM_HZ"] = "20"
 os.environ["STRATOS_LOG"] = "0"
 
-import webapp
+from controller import webapp
 
 
 class TestWebApp(unittest.TestCase):

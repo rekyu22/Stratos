@@ -4,15 +4,18 @@ Station sol Python STRATOS avec pipeline complet extraction -> traitement -> for
 
 ## Architecture
 
-- `protocol.py` : spécification binaire, checksum, conversion en `StratosFrame`.
-- `serial_reader.py` : extraction robuste des trames brutes depuis UART.
-- `frame_sources.py` : abstraction des sources (`serial` réel ou `sim`).
-- `telemetry_service.py` : traitement temps réel, historique en mémoire, métriques lien.
-- `logger.py` : persistance CSV horodatée.
-- `webapp.py` : API REST (`/api/status`, `/api/latest`, `/api/history`), WebSocket live (`/ws/live`) et dashboard.
-- `web_static/` : interface web live (cartes + graphiques).
-- `run_web.py` : lancement serveur HTTP.
-- `main.py` : boucle console historique conservée.
+- `model/`
+- `model/protocol.py` : spécification binaire, checksum, conversion en `StratosFrame`.
+- `model/serial_reader.py` : extraction robuste des trames brutes depuis UART.
+- `model/frame_sources.py` : abstraction des sources (`serial` réel ou `sim`/`auto`).
+- `model/telemetry_service.py` : traitement temps réel, historique en mémoire, métriques lien.
+- `model/logger.py` : persistance CSV horodatée.
+- `controller/`
+- `controller/webapp.py` : API REST (`/api/status`, `/api/latest`, `/api/history`), WebSocket live (`/ws/live`) et switch de source.
+- `controller/main_console.py` : boucle console.
+- `view/web_static/` : interface web live (cartes + graphiques).
+- `run_web.py` : point d'entrée serveur (wrapper vers `controller.webapp`).
+- `main.py` : point d'entrée console (wrapper vers `controller.main_console`).
 
 ## Installation
 

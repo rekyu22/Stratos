@@ -1,8 +1,8 @@
 import unittest
 import struct
 
-from protocol import ETX, FRAME_FORMAT, STX, parse_frame
-from serial_reader import SerialReader
+from model.protocol import ETX, FRAME_FORMAT, STX, parse_frame
+from model.serial_reader import SerialReader
 
 
 VALID_FRAME_HEX = "AA002A000AFFF603E80005FFFB000000DC00018A0A08AC000000960F3C9F55"

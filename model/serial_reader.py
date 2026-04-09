@@ -1,5 +1,5 @@
 from typing import Optional
-from protocol import FRAME_LENGTH, STX, ETX
+from model.protocol import ETX, FRAME_LENGTH, STX
 
 try:
     import serial

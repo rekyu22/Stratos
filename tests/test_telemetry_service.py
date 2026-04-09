@@ -1,7 +1,7 @@
 import time
 import unittest
 
-from telemetry_service import TelemetryService
+from model.telemetry_service import TelemetryService
 
 
 VALID_FRAME = bytes.fromhex("AA002A000AFFF603E80005FFFB000000DC00018A0A08AC000000960F3C9F55")
