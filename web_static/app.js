@@ -3,6 +3,9 @@ const WS_PERIOD_MS = 250;
 
 let liveSocket = null;
 let replayMode = false;
+let wsFailures = 0;
+let pollingTimer = null;
+let requestedLiveMode = null;
 
 function fmt(value, decimals = 3, unit = "") {
   if (value === null || value === undefined) {
@@ -114,6 +117,11 @@ function updateView(status, latest, samples) {
       ? "Age derniere trame: N/A"
       : `Age derniere trame: ${status.last_frame_age_s.toFixed(2)} s`
   );
+  if (!replayMode) {
+    const mode = status.source_mode || "unknown";
+    const detail = status.source_detail ? ` (${status.source_detail})` : "";
+    setText("mode-label", `Mode: live websocket [${mode}]${detail}`);
+  }
 
   if (latest) {
     setText("frame-id", String(latest.frame_id));
@@ -177,9 +185,62 @@ function updateView(status, latest, samples) {
   }
 }
 
+async function pollOnce() {
+  const [statusResp, latestResp, historyResp] = await Promise.all([
+    fetch("/api/status"),
+    fetch("/api/latest"),
+    fetch(`/api/history?points=${MAX_POINTS}`),
+  ]);
+  const status = await statusResp.json();
+  const latestPayload = await latestResp.json();
+  const historyPayload = await historyResp.json();
+  updateView(status, latestPayload.sample, historyPayload.samples || []);
+}
+
+function startPollingFallback() {
+  if (pollingTimer !== null) {
+    return;
+  }
+  setText("mode-label", "Mode: fallback HTTP polling");
+  const tick = async () => {
+    try {
+      await pollOnce();
+    } catch (err) {
+      const badge = document.getElementById("link-badge");
+      badge.textContent = "API indisponible";
+      badge.className = "badge bad";
+    } finally {
+      pollingTimer = window.setTimeout(tick, 500);
+    }
+  };
+  tick();
+}
+
+function stopPollingFallback() {
+  if (pollingTimer !== null) {
+    window.clearTimeout(pollingTimer);
+    pollingTimer = null;
+  }
+}
+
+async function switchSource(mode) {
+  const response = await fetch("/api/source", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({ detail: "Erreur switch source" }));
+    throw new Error(payload.detail || "Erreur switch source");
+  }
+  replayMode = false;
+  connectLive();
+}
+
 function connectLive() {
   replayMode = false;
-  setText("mode-label", "Mode: live websocket");
+  stopPollingFallback();
+  setText("mode-label", "Mode: live websocket [connexion...]");
 
   if (liveSocket) {
     liveSocket.close();
@@ -187,17 +248,34 @@ function connectLive() {
   }
 
   const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-  const url = `${scheme}://${window.location.host}/ws/live?points=${MAX_POINTS}&period_ms=${WS_PERIOD_MS}`;
+  const params = new URLSearchParams({
+    points: String(MAX_POINTS),
+    period_ms: String(WS_PERIOD_MS),
+  });
+  if (requestedLiveMode) {
+    params.set("mode", requestedLiveMode);
+  }
+  const url = `${scheme}://${window.location.host}/ws/live?${params.toString()}`;
   const ws = new WebSocket(url);
   liveSocket = ws;
 
   ws.onmessage = (event) => {
+    wsFailures = 0;
     const payload = JSON.parse(event.data);
+    if (payload.error) {
+      setText("mode-label", `Mode: erreur switch (${payload.error})`);
+      return;
+    }
     updateView(payload.status, payload.latest, payload.history);
   };
 
   ws.onclose = () => {
     if (replayMode) {
+      return;
+    }
+    wsFailures += 1;
+    if (wsFailures >= 3) {
+      startPollingFallback();
       return;
     }
     const badge = document.getElementById("link-badge");
@@ -288,11 +366,38 @@ async function loadReplayFile(file) {
     liveSocket.close();
     liveSocket = null;
   }
+  stopPollingFallback();
   const status = replayStatus(samples);
   updateView(status, status.latest, samples.slice(-MAX_POINTS));
 }
 
 function initControls() {
+  const simBtn = document.getElementById("mode-sim-btn");
+  if (simBtn) {
+    simBtn.addEventListener("click", async () => {
+      setText("mode-label", "Mode: switch vers simulé...");
+      try {
+        requestedLiveMode = "sim";
+        await switchSource("sim");
+      } catch (err) {
+        connectLive();
+      }
+    });
+  }
+
+  const realBtn = document.getElementById("mode-real-btn");
+  if (realBtn) {
+    realBtn.addEventListener("click", async () => {
+      setText("mode-label", "Mode: switch vers réel...");
+      try {
+        requestedLiveMode = "serial";
+        await switchSource("serial");
+      } catch (err) {
+        connectLive();
+      }
+    });
+  }
+
   const liveBtn = document.getElementById("live-btn");
   if (liveBtn) {
     liveBtn.addEventListener("click", () => {

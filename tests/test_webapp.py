@@ -36,6 +36,14 @@ class TestWebApp(unittest.TestCase):
             self.assertIn("stratos_history.csv", content_disposition)
             self.assertIn("timestamp,frame_id", response.text)
 
+    def test_switch_source_endpoint(self):
+        with TestClient(webapp.app) as client:
+            response = client.post("/api/source", json={"mode": "sim"})
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertTrue(payload.get("ok"))
+            self.assertIn("status", payload)
+
     def test_websocket_live(self):
         with TestClient(webapp.app) as client:
             with client.websocket_connect("/ws/live?points=5&period_ms=120") as websocket:

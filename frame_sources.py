@@ -7,6 +7,11 @@ from typing import Optional, Protocol
 from protocol import ETX, FRAME_FORMAT, STX
 from serial_reader import SerialReader
 
+try:
+    from serial.tools import list_ports
+except Exception:
+    list_ports = None
+
 
 class FrameSource(Protocol):
     def open(self) -> None:
@@ -21,13 +26,16 @@ class FrameSource(Protocol):
 
 @dataclass
 class SerialSourceConfig:
-    port: str
+    port: Optional[str] = None
     baudrate: int = 9600
     timeout: float = 1.0
 
 
 class SerialFrameSource:
     def __init__(self, config: SerialSourceConfig):
+        if not config.port:
+            raise ValueError("serial port is required")
+        self._config = config
         self._reader = SerialReader(
             port=config.port,
             baudrate=config.baudrate,
@@ -42,6 +50,14 @@ class SerialFrameSource:
 
     def read_frame(self) -> Optional[bytes]:
         return self._reader.read_frame()
+
+    @property
+    def mode(self) -> str:
+        return "serial"
+
+    @property
+    def source_detail(self) -> str:
+        return str(self._config.port)
 
 
 class SimulatedFrameSource:
@@ -71,6 +87,66 @@ class SimulatedFrameSource:
         self._frame_id = (self._frame_id + 1) & 0xFFFF
         self._phase += 0.15
         return _build_simulated_frame(self._frame_id, self._phase)
+
+    @property
+    def mode(self) -> str:
+        return "sim"
+
+    @property
+    def source_detail(self) -> str:
+        return f"{1.0 / self._period:.1f} Hz"
+
+
+class AutoFrameSource:
+    def __init__(self, serial_config: SerialSourceConfig, sim_hz: float = 10.0):
+        self._serial_config = serial_config
+        self._sim_hz = sim_hz
+        self._active = None
+        self._mode = "auto"
+        self._source_detail = "pending"
+
+    def open(self) -> None:
+        candidates = _candidate_ports(self._serial_config.port)
+        for port in candidates:
+            try:
+                serial_source = SerialFrameSource(
+                    SerialSourceConfig(
+                        port=port,
+                        baudrate=self._serial_config.baudrate,
+                        timeout=self._serial_config.timeout,
+                    )
+                )
+                serial_source.open()
+                self._active = serial_source
+                self._mode = "serial"
+                self._source_detail = port
+                return
+            except Exception:
+                continue
+
+        sim_source = SimulatedFrameSource(hz=self._sim_hz)
+        sim_source.open()
+        self._active = sim_source
+        self._mode = "sim"
+        self._source_detail = f"{self._sim_hz:.1f} Hz fallback"
+
+    def close(self) -> None:
+        if self._active is not None:
+            self._active.close()
+            self._active = None
+
+    def read_frame(self) -> Optional[bytes]:
+        if self._active is None:
+            return None
+        return self._active.read_frame()
+
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    @property
+    def source_detail(self) -> str:
+        return self._source_detail
 
 
 def _checksum(payload: bytes) -> int:
@@ -110,3 +186,24 @@ def _build_simulated_frame(frame_id: int, phase: float) -> bytes:
     )
     checksum = _checksum(payload)
     return bytes([STX]) + payload + bytes([checksum, ETX])
+
+
+def _candidate_ports(configured_port: Optional[str]) -> list[str]:
+    if configured_port:
+        return [configured_port]
+    if list_ports is None:
+        return []
+
+    ports = [port.device for port in list_ports.comports()]
+    if not ports:
+        return []
+
+    preferred = []
+    others = []
+    for device in ports:
+        lower = device.lower()
+        if "usb" in lower or "acm" in lower or "com" in lower or "cu." in lower:
+            preferred.append(device)
+        else:
+            others.append(device)
+    return preferred + others

@@ -56,19 +56,29 @@ class TelemetryService:
         self._source.open()
         if self._logger is not None:
             self._logger.open()
-
-        self._stop.clear()
-        self._thread = Thread(target=self._run_loop, daemon=True)
-        self._thread.start()
+        self._start_reader_thread()
 
     def stop(self) -> None:
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
-            self._thread = None
+        self._stop_reader_thread()
         self._source.close()
         if self._logger is not None:
             self._logger.close()
+
+    def switch_source(self, new_source: Any) -> Dict[str, Any]:
+        self._stop_reader_thread()
+        try:
+            self._source.close()
+        except Exception:
+            pass
+        self._source = new_source
+        self._source.open()
+        with self._lock:
+            self._last_frame_time = None
+            self._last_frame_id = None
+            self._arrival_timestamps.clear()
+            self._intervals_s.clear()
+        self._start_reader_thread()
+        return self.get_status()
 
     def get_latest(self) -> Optional[Dict[str, Any]]:
         with self._lock:
@@ -97,6 +107,8 @@ class TelemetryService:
             drop_rate_pct = 0.0
             if expected_total > 0:
                 drop_rate_pct = (self._estimated_missing_frames / expected_total) * 100.0
+            source_mode = getattr(self._source, "mode", self._source.__class__.__name__.lower())
+            source_detail = getattr(self._source, "source_detail", "")
             return {
                 "frames_received": self._frames_received,
                 "frames_rejected": self._frames_rejected,
@@ -109,6 +121,8 @@ class TelemetryService:
                 "duplicate_frames": self._duplicate_frames,
                 "reject_rate_pct": reject_rate_pct,
                 "drop_rate_pct": drop_rate_pct,
+                "source_mode": source_mode,
+                "source_detail": source_detail,
             }
 
     def _run_loop(self) -> None:
@@ -141,6 +155,17 @@ class TelemetryService:
                 self._history.append(sample)
             if self._logger is not None:
                 self._logger.log(frame)
+
+    def _start_reader_thread(self) -> None:
+        self._stop.clear()
+        self._thread = Thread(target=self._run_loop, daemon=True)
+        self._thread.start()
+
+    def _stop_reader_thread(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
 
 
 def _to_sample(frame: StratosFrame) -> TelemetrySample:

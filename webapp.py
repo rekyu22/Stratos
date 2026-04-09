@@ -5,11 +5,12 @@ import os
 from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
-from frame_sources import SerialFrameSource, SerialSourceConfig, SimulatedFrameSource
+from frame_sources import AutoFrameSource, SerialFrameSource, SerialSourceConfig, SimulatedFrameSource
 from logger import TelemetryLogger
 from telemetry_service import TelemetryService
 
@@ -19,20 +20,42 @@ INDEX_FILE = STATIC_DIR / "index.html"
 
 
 def _build_service() -> TelemetryService:
-    mode = os.getenv("STRATOS_SOURCE", "sim").lower()
+    mode = os.getenv("STRATOS_SOURCE", "auto").lower()
     with_logger = os.getenv("STRATOS_LOG", "1") == "1"
     logger = TelemetryLogger() if with_logger else None
-
-    if mode == "serial":
-        port = os.getenv("STRATOS_SERIAL_PORT", "COM3")
-        baud = int(os.getenv("STRATOS_SERIAL_BAUD", "9600"))
-        timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "1.0"))
-        source = SerialFrameSource(SerialSourceConfig(port=port, baudrate=baud, timeout=timeout))
-    else:
-        hz = float(os.getenv("STRATOS_SIM_HZ", "10.0"))
-        source = SimulatedFrameSource(hz=hz)
-
+    port = os.getenv("STRATOS_SERIAL_PORT")
+    baud = int(os.getenv("STRATOS_SERIAL_BAUD", "9600"))
+    timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "1.0"))
+    hz = float(os.getenv("STRATOS_SIM_HZ", "10.0"))
+    source = _build_source(mode=mode, port=port, baud=baud, timeout=timeout, sim_hz=hz)
     return TelemetryService(source=source, logger=logger)
+
+
+def _build_source(mode: str, port: str | None, baud: int, timeout: float, sim_hz: float):
+    mode = mode.lower()
+    if mode == "serial":
+        if port:
+            return SerialFrameSource(SerialSourceConfig(port=port, baudrate=baud, timeout=timeout))
+        return AutoFrameSource(
+            SerialSourceConfig(port=port, baudrate=baud, timeout=timeout),
+            sim_hz=sim_hz,
+        )
+    if mode == "sim":
+        return SimulatedFrameSource(hz=sim_hz)
+    if mode == "auto":
+        return AutoFrameSource(
+            SerialSourceConfig(port=port, baudrate=baud, timeout=timeout),
+            sim_hz=sim_hz,
+        )
+    raise ValueError(f"Unsupported source mode: {mode}")
+
+
+class SourceSwitchRequest(BaseModel):
+    mode: str
+    port: str | None = None
+    baudrate: int | None = None
+    timeout: float | None = None
+    sim_hz: float | None = None
 
 
 app = FastAPI(title="STRATOS Ground Station")
@@ -69,6 +92,28 @@ def api_latest() -> Dict[str, Any]:
 @app.get("/api/history")
 def api_history(points: int = Query(default=120, ge=1, le=2000)) -> Dict[str, Any]:
     return {"samples": service.get_history(limit=points)}
+
+
+@app.post("/api/source")
+def api_switch_source(payload: SourceSwitchRequest) -> Dict[str, Any]:
+    default_port = os.getenv("STRATOS_SERIAL_PORT")
+    default_baud = int(os.getenv("STRATOS_SERIAL_BAUD", "9600"))
+    default_timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "1.0"))
+    default_sim_hz = float(os.getenv("STRATOS_SIM_HZ", "10.0"))
+
+    mode = payload.mode.lower()
+    port = payload.port if payload.port is not None else default_port
+    baud = payload.baudrate if payload.baudrate is not None else default_baud
+    timeout = payload.timeout if payload.timeout is not None else default_timeout
+    sim_hz = payload.sim_hz if payload.sim_hz is not None else default_sim_hz
+
+    try:
+        new_source = _build_source(mode=mode, port=port, baud=baud, timeout=timeout, sim_hz=sim_hz)
+        status = service.switch_source(new_source)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {"ok": True, "status": status}
 
 
 @app.get("/api/history.csv")
@@ -124,6 +169,24 @@ async def ws_live(websocket: WebSocket) -> None:
     period_ms = int(websocket.query_params.get("period_ms", "250"))
     period_ms = max(100, min(period_ms, 2000))
     period_s = period_ms / 1000.0
+    forced_mode = websocket.query_params.get("mode")
+
+    if forced_mode:
+        default_port = os.getenv("STRATOS_SERIAL_PORT")
+        default_baud = int(os.getenv("STRATOS_SERIAL_BAUD", "9600"))
+        default_timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "1.0"))
+        default_sim_hz = float(os.getenv("STRATOS_SIM_HZ", "10.0"))
+        try:
+            new_source = _build_source(
+                mode=forced_mode,
+                port=default_port,
+                baud=default_baud,
+                timeout=default_timeout,
+                sim_hz=default_sim_hz,
+            )
+            service.switch_source(new_source)
+        except Exception as exc:
+            await websocket.send_json({"error": f"switch_mode_failed: {exc}"})
 
     try:
         while True:
