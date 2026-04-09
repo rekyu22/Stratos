@@ -1,4 +1,4 @@
-import math
+import random
 import struct
 import time
 from dataclasses import dataclass
@@ -66,7 +66,13 @@ class SimulatedFrameSource:
         self._opened = False
         self._frame_id = 0
         self._next_ts = 0.0
-        self._phase = 0.0
+        self._rng = random.Random()
+        self._altitude_cm = 150.0
+        self._altitude_target_cm = 150.0
+        self._pressure_pa = 100874.0
+        self._temp_imu_raw = 220.0
+        self._temp_bmp_raw = 2220.0
+        self._vbat_mv = 3900.0
 
     def open(self) -> None:
         self._opened = True
@@ -85,8 +91,7 @@ class SimulatedFrameSource:
 
         self._next_ts += self._period
         self._frame_id = (self._frame_id + 1) & 0xFFFF
-        self._phase += 0.15
-        return _build_simulated_frame(self._frame_id, self._phase)
+        return self._build_frame(self._frame_id)
 
     @property
     def mode(self) -> str:
@@ -95,6 +100,54 @@ class SimulatedFrameSource:
     @property
     def source_detail(self) -> str:
         return f"{1.0 / self._period:.1f} Hz"
+
+    def _build_frame(self, frame_id: int) -> bytes:
+        if frame_id % 200 == 0:
+            self._altitude_target_cm = self._rng.uniform(145.0, 165.0)
+
+        self._altitude_cm += (self._altitude_target_cm - self._altitude_cm) * 0.035
+        self._altitude_cm += self._rng.uniform(-0.35, 0.35)
+        self._altitude_cm = _clamp(self._altitude_cm, 120.0, 250.0)
+
+        expected_pressure = 100874.0 - (self._altitude_cm - 150.0) * 12.0
+        self._pressure_pa += (expected_pressure - self._pressure_pa) * 0.07
+        self._pressure_pa += self._rng.uniform(-1.2, 1.2)
+
+        self._temp_imu_raw += self._rng.uniform(-0.25, 0.25)
+        self._temp_imu_raw = _clamp(self._temp_imu_raw, 218.0, 235.0)
+
+        self._temp_bmp_raw += self._rng.uniform(-0.18, 0.18)
+        self._temp_bmp_raw = _clamp(self._temp_bmp_raw, 2190.0, 2300.0)
+
+        self._vbat_mv -= 0.02
+        self._vbat_mv += self._rng.uniform(-0.06, 0.01)
+        self._vbat_mv = _clamp(self._vbat_mv, 3400.0, 3950.0)
+
+        acc_x_raw = int(self._rng.uniform(-12.0, 12.0))
+        acc_y_raw = int(self._rng.uniform(-12.0, 12.0))
+        acc_z_raw = int(1000.0 + self._rng.uniform(-8.0, 8.0))
+
+        gyr_x_raw = int(self._rng.uniform(-3.0, 3.0))
+        gyr_y_raw = int(self._rng.uniform(-3.0, 3.0))
+        gyr_z_raw = int(self._rng.uniform(-2.0, 2.0))
+
+        payload = struct.pack(
+            FRAME_FORMAT,
+            frame_id,
+            acc_x_raw,
+            acc_y_raw,
+            acc_z_raw,
+            gyr_x_raw,
+            gyr_y_raw,
+            gyr_z_raw,
+            int(round(self._temp_imu_raw)),
+            int(round(self._pressure_pa)),
+            int(round(self._temp_bmp_raw)),
+            int(round(self._altitude_cm)),
+            int(round(self._vbat_mv)),
+        )
+        checksum = _checksum(payload)
+        return bytes([STX]) + payload + bytes([checksum, ETX])
 
 
 class AutoFrameSource:
@@ -156,36 +209,8 @@ def _checksum(payload: bytes) -> int:
     return checksum
 
 
-def _build_simulated_frame(frame_id: int, phase: float) -> bytes:
-    acc_x_raw = int(10.0 * math.sin(phase))
-    acc_y_raw = int(10.0 * math.cos(phase * 0.7))
-    acc_z_raw = int(1000 + 15.0 * math.sin(phase * 1.3))
-    gyr_x_raw = int(3.0 * math.sin(phase * 1.1))
-    gyr_y_raw = int(3.0 * math.cos(phase * 0.9))
-    gyr_z_raw = int(2.0 * math.sin(phase * 1.5))
-    temp_imu_raw = int(220 + 4.0 * math.sin(phase * 0.2))
-    pression_raw = int(100874 + 35.0 * math.sin(phase * 0.6))
-    temp_bmp_raw = int(2220 + 12.0 * math.cos(phase * 0.25))
-    altitude_raw = int(150 + 8.0 * math.sin(phase * 0.5))
-    v_bat_raw = int(3900 - 40.0 * (0.5 + 0.5 * math.sin(phase * 0.1)))
-
-    payload = struct.pack(
-        FRAME_FORMAT,
-        frame_id,
-        acc_x_raw,
-        acc_y_raw,
-        acc_z_raw,
-        gyr_x_raw,
-        gyr_y_raw,
-        gyr_z_raw,
-        temp_imu_raw,
-        pression_raw,
-        temp_bmp_raw,
-        altitude_raw,
-        v_bat_raw,
-    )
-    checksum = _checksum(payload)
-    return bytes([STX]) + payload + bytes([checksum, ETX])
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
 
 
 def _candidate_ports(configured_port: Optional[str]) -> list[str]:
