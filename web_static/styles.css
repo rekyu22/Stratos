@@ -1,0 +1,181 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  background: radial-gradient(circle at top left, #1f2f42, #0f1720 60%);
+  color: #eef4ff;
+}
+
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 18px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: #2b8dff;
+  color: #f4f9ff;
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn.secondary {
+  background: #4d5f75;
+}
+
+.file-btn input {
+  display: none;
+}
+
+.mode-label {
+  font-size: 0.82rem;
+  color: #c3d3e7;
+}
+
+.badge {
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.badge.good {
+  background: #1f7a4c;
+}
+
+.badge.bad {
+  background: #9f2f2f;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.card {
+  background: rgba(20, 31, 45, 0.86);
+  border: 1px solid rgba(140, 180, 220, 0.25);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.card h2 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #a8bfd8;
+  font-weight: 600;
+}
+
+.card p {
+  margin: 6px 0 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.panel {
+  background: rgba(20, 31, 45, 0.86);
+  border: 1px solid rgba(140, 180, 220, 0.25);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.panel h3 {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  color: #a8bfd8;
+}
+
+canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: rgba(9, 13, 20, 0.75);
+  border-radius: 8px;
+}
+
+.status-row {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 0.9rem;
+  color: #cad8e8;
+}
+
+.health-row {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.health {
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.health.good {
+  background: #1f7a4c;
+  color: #eafff2;
+}
+
+.health.warn {
+  background: #8a6415;
+  color: #fff5dc;
+}
+
+.health.bad {
+  background: #9f2f2f;
+  color: #ffeaea;
+}
+
+@media (max-width: 960px) {
+  .controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cards,
+  .chart-grid {
+    grid-template-columns: 1fr;
+  }
+}

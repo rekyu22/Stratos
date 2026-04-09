@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>STRATOS Ground Station</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <h1>STRATOS Ground Station</h1>
+      <div id="link-badge" class="badge bad">Liaison inconnue</div>
+    </header>
+
+    <section class="controls">
+      <a class="btn" href="/api/history.csv?points=2000">Exporter CSV</a>
+      <label class="btn file-btn">
+        Charger replay CSV
+        <input id="replay-file" type="file" accept=".csv,text/csv">
+      </label>
+      <button id="live-btn" class="btn secondary" type="button">Retour live</button>
+      <span id="mode-label" class="mode-label">Mode: live websocket</span>
+    </section>
+
+    <section class="cards" id="latest-cards">
+      <article class="card"><h2>Trame</h2><p id="frame-id">-</p></article>
+      <article class="card"><h2>Altitude</h2><p id="altitude">-</p></article>
+      <article class="card"><h2>Pression</h2><p id="pression">-</p></article>
+      <article class="card"><h2>Batterie</h2><p id="vbat">-</p></article>
+      <article class="card"><h2>Temp IMU</h2><p id="temp-imu">-</p></article>
+      <article class="card"><h2>Temp BMP</h2><p id="temp-bmp">-</p></article>
+    </section>
+
+    <section class="chart-grid">
+      <article class="panel">
+        <h3>Altitude (m)</h3>
+        <canvas id="chart-altitude" width="500" height="180"></canvas>
+      </article>
+      <article class="panel">
+        <h3>Pression (hPa)</h3>
+        <canvas id="chart-pression" width="500" height="180"></canvas>
+      </article>
+      <article class="panel">
+        <h3>Batterie (V)</h3>
+        <canvas id="chart-vbat" width="500" height="180"></canvas>
+      </article>
+    </section>
+
+    <section class="status-row">
+      <span id="frames-received">Recues: -</span>
+      <span id="frames-rejected">Rejetees: -</span>
+      <span id="history-size">Historique: -</span>
+      <span id="last-age">Age derniere trame: -</span>
+      <span id="rx-fps">Rx: -</span>
+      <span id="jitter">Jitter: -</span>
+      <span id="drop-rate">Perte estimee: -</span>
+      <span id="reject-rate">Rejet: -</span>
+    </section>
+
+    <section class="health-row">
+      <span id="health-link" class="health bad">Liaison: N/A</span>
+      <span id="health-integrity" class="health bad">Integrite: N/A</span>
+      <span id="health-battery" class="health bad">Batterie: N/A</span>
+      <span id="health-temp" class="health bad">Temperature: N/A</span>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
