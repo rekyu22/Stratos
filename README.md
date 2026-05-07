@@ -25,7 +25,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Lancement Web (mode auto recommandé)
+## Lancement Web (mode réel par défaut)
 
 ```bash
 python3 run_web.py
@@ -35,7 +35,8 @@ Puis ouvrir `http://127.0.0.1:8000`.
 
 Le dashboard est alimenté en temps réel par WebSocket (`/ws/live`) avec reconnexion automatique.
 Il inclut aussi un mode replay via chargement de CSV local et un export direct de l'historique (`/api/history.csv`).
-En mode auto (défaut), la station tente une source série puis bascule en simulation si aucun port valide n'est disponible.
+Par défaut, la station démarre en mode `serial` (écoute réelle) et tente de se connecter à une source série.
+Si aucun port valide n'est disponible, un fallback simulation reste possible via la logique `AutoFrameSource`.
 Depuis l'UI, boutons `Mode simulé` et `Mode réel` permettent le switch à chaud sans redémarrer.
 
 ## Lancement Web (source série réelle)
@@ -51,7 +52,7 @@ Sur Windows, utiliser un port de type `COM3`.
 
 ## Variables d'environnement
 
-- `STRATOS_SOURCE` : `auto` (défaut), `sim` ou `serial`
+- `STRATOS_SOURCE` : `serial` (défaut), `sim` ou `auto`
 - `STRATOS_SIM_HZ` : fréquence simulation, défaut `10.0`
 - `STRATOS_SERIAL_PORT` : port série (`COM3`, `/dev/ttyUSB0`, ...)
 - `STRATOS_SERIAL_BAUD` : défaut `9600`

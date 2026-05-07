@@ -21,7 +21,7 @@ INDEX_FILE = STATIC_DIR / "index.html"
 
 
 def _build_service() -> TelemetryService:
-    mode = os.getenv("STRATOS_SOURCE", "auto").lower()
+    mode = os.getenv("STRATOS_SOURCE", "serial").lower()
     with_logger = os.getenv("STRATOS_LOG", "1") == "1"
     logger = TelemetryLogger() if with_logger else None
     port = os.getenv("STRATOS_SERIAL_PORT")
