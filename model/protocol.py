@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 FRAME_LENGTH   = 31
+LEGACY_SHORT_FRAME_LENGTH = 12
 STX            = 0xAA
 ETX            = 0x55
 SENSOR_ABSENT  = 0xFFFF
@@ -41,6 +42,25 @@ def _verify_checksum(raw: bytes) -> bool:
 
 
 def parse_frame(raw: bytes) -> Optional[StratosFrame]:
+    if len(raw) == LEGACY_SHORT_FRAME_LENGTH:
+        if raw[0] != STX:
+            return None
+        frame_id = int.from_bytes(raw[1:3], byteorder="big", signed=False)
+        return StratosFrame(
+            frame_id=frame_id,
+            acc_x=None,
+            acc_y=None,
+            acc_z=None,
+            gyr_x=None,
+            gyr_y=None,
+            gyr_z=None,
+            temp_imu=None,
+            pression=None,
+            temp_bmp=None,
+            altitude=None,
+            v_bat=None,
+        )
+
     if len(raw) != FRAME_LENGTH:
         return None
     if raw[0] != STX or raw[-1] != ETX:

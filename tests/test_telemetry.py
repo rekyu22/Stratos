@@ -7,6 +7,7 @@ from model.serial_reader import SerialReader
 
 VALID_FRAME_HEX = "AA002A000AFFF603E80005FFFB000000DC00018A0A08AC000000960F3C9F55"
 INVALID_CHECKSUM_FRAME_HEX = "AA002A000AFFF603E80005FFFB000000DC00018A0A08AC000000960F3C6B55"
+LEGACY_SHORT_FRAME_HEX = "AA7779FFFFFFFFFFFFFFFFFF"
 
 
 def _xor(payload: bytes) -> int:
@@ -97,6 +98,24 @@ class TestTelemetryParser(unittest.TestCase):
         reader._buffer = bytearray(b"\xAA\x00" + valid_raw)
         extracted = reader._extract_frame()
         self.assertEqual(extracted, valid_raw)
+
+    def test_parse_legacy_short_frame(self) -> None:
+        frame = parse_frame(bytes.fromhex(LEGACY_SHORT_FRAME_HEX))
+        self.assertIsNotNone(frame)
+        assert frame is not None
+        self.assertEqual(frame.frame_id, 0x7779)
+        self.assertIsNone(frame.altitude)
+        self.assertIsNone(frame.pression)
+
+    def test_serial_reader_extracts_legacy_short_frames(self) -> None:
+        short_1 = bytes.fromhex("AA7779FFFFFFFFFFFFFFFFFF")
+        short_2 = bytes.fromhex("AA777AFFFFFFFFFFFFFFFFFF")
+        reader = SerialReader(port="TEST")
+        reader._buffer = bytearray(b"\x00\x11" + short_1 + short_2)
+        extracted_1 = reader._extract_frame()
+        extracted_2 = reader._extract_frame()
+        self.assertEqual(extracted_1, short_1)
+        self.assertEqual(extracted_2, short_2)
 
 
 if __name__ == "__main__":

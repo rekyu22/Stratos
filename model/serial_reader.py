@@ -1,5 +1,5 @@
 from typing import Optional
-from model.protocol import ETX, FRAME_LENGTH, STX
+from model.protocol import ETX, FRAME_LENGTH, LEGACY_SHORT_FRAME_LENGTH, STX
 
 try:
     import serial
@@ -50,12 +50,30 @@ class SerialReader:
             if stx_index > 0:
                 del self._buffer[:stx_index]
 
-            if len(self._buffer) < FRAME_LENGTH:
-                return None
+            if len(self._buffer) >= FRAME_LENGTH:
+                candidate = bytes(self._buffer[:FRAME_LENGTH])
+                if candidate[-1] == ETX:
+                    del self._buffer[:FRAME_LENGTH]
+                    return candidate
 
-            candidate = bytes(self._buffer[:FRAME_LENGTH])
-            if candidate[-1] == ETX:
-                del self._buffer[:FRAME_LENGTH]
+            if len(self._buffer) >= LEGACY_SHORT_FRAME_LENGTH and self._looks_like_legacy_short():
+                candidate = bytes(self._buffer[:LEGACY_SHORT_FRAME_LENGTH])
+                del self._buffer[:LEGACY_SHORT_FRAME_LENGTH]
                 return candidate
 
+            if len(self._buffer) < LEGACY_SHORT_FRAME_LENGTH:
+                return None
+
             del self._buffer[0]
+
+    def _looks_like_legacy_short(self) -> bool:
+        if len(self._buffer) < LEGACY_SHORT_FRAME_LENGTH:
+            return False
+        candidate = self._buffer[:LEGACY_SHORT_FRAME_LENGTH]
+        if candidate[0] != STX:
+            return False
+        if any(byte != 0xFF for byte in candidate[3:LEGACY_SHORT_FRAME_LENGTH]):
+            return False
+        if len(self._buffer) > LEGACY_SHORT_FRAME_LENGTH and self._buffer[LEGACY_SHORT_FRAME_LENGTH] != STX:
+            return False
+        return True
