@@ -1,11 +1,12 @@
+import os
 import time
 
 from model.logger import TelemetryLogger
 from model.protocol import StratosFrame, parse_frame
 from model.serial_reader import SerialReader
 
-SERIAL_PORT    = "COM3"
-SERIAL_BAUD    = 9600
+SERIAL_PORT    = os.getenv("STRATOS_SERIAL_PORT", "COM3")
+SERIAL_BAUD    = int(os.getenv("STRATOS_SERIAL_BAUD", "9600"))
 LINK_TIMEOUT_S = 2.0
 
 
