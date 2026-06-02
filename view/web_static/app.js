@@ -10,7 +10,7 @@ let sampleBuffer = [];
 let lastFrameId = null;
 
 function fmt(value, decimals = 3, unit = "") {
-  if (value === null || value === undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
     return "N/A";
   }
   return `${Number(value).toFixed(decimals)}${unit}`;
@@ -66,15 +66,36 @@ function minSpanForUnit(unit) {
     return 0.002;
   }
   if (unit === "m") {
-    return 0.02;
+    return 0.05;
   }
   if (unit === "hPa") {
     return 0.02;
   }
+  if (unit === "°/s") {
+    return 1.0;
+  }
+  if (unit === "°") {
+    return 2.0;
+  }
   return 0.1;
 }
 
-function drawSeries(canvasId, samples, field, color, unit) {
+function clamp(value, low, high) {
+  return Math.max(low, Math.min(high, value));
+}
+
+function toTimestampMs(sample) {
+  const value = Date.parse((sample && sample.timestamp) || "");
+  return Number.isFinite(value) ? value : null;
+}
+
+function drawNoData(ctx, left, top) {
+  ctx.fillStyle = "rgba(186, 203, 224, 0.75)";
+  ctx.font = "11px Segoe UI, sans-serif";
+  ctx.fillText("No data", left + 8, top + 14);
+}
+
+function drawMultiSeries(canvasId, samples, seriesDefs, unit) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) {
     return;
@@ -84,28 +105,30 @@ function drawSeries(canvasId, samples, field, color, unit) {
   const height = canvas.height;
   ctx.clearRect(0, 0, width, height);
 
-  const values = (samples || []).map((s) => s[field]);
-  const filtered = values.filter((v) => v !== null && v !== undefined && Number.isFinite(v));
-
-  const left = 54;
-  const right = 8;
-  const top = 8;
-  const bottom = 22;
+  const left = 56;
+  const right = 10;
+  const top = 10;
+  const bottom = 24;
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
 
-  ctx.fillStyle = "rgba(186, 203, 224, 0.75)";
-  ctx.font = "11px Segoe UI, sans-serif";
+  const flattened = [];
+  for (const def of seriesDefs) {
+    for (const sample of samples || []) {
+      const value = sample[def.field];
+      if (value !== null && value !== undefined && Number.isFinite(value)) {
+        flattened.push(value);
+      }
+    }
+  }
 
-  if (filtered.length === 0 || values.length < 2) {
-    ctx.fillText("No data", left + 8, top + 14);
+  if (flattened.length === 0 || (samples || []).length < 2) {
+    drawNoData(ctx, left, top);
     return;
   }
 
-  let min = Math.min(...filtered);
-  let max = Math.max(...filtered);
-  const rawMin = min;
-  const rawMax = max;
+  let min = Math.min(...flattened);
+  let max = Math.max(...flattened);
   if (min === max) {
     const half = minSpanForUnit(unit) / 2.0;
     min -= half;
@@ -119,16 +142,19 @@ function drawSeries(canvasId, samples, field, color, unit) {
       max = mid + minSpan / 2.0;
     }
   }
-  const span = max - min;
-  const pad = span * 0.12;
+
+  const pad = (max - min) * 0.12;
   min -= pad;
   max += pad;
   const range = max - min;
   const decimals = decimalsForSpan(range);
 
-  const yTicks = 5;
+  ctx.fillStyle = "rgba(186, 203, 224, 0.75)";
+  ctx.font = "11px Segoe UI, sans-serif";
   ctx.strokeStyle = "rgba(255,255,255,0.12)";
   ctx.lineWidth = 1;
+
+  const yTicks = 5;
   for (let i = 0; i < yTicks; i += 1) {
     const ratio = i / (yTicks - 1);
     const y = top + ratio * plotHeight;
@@ -141,11 +167,12 @@ function drawSeries(canvasId, samples, field, color, unit) {
   }
 
   const xTicks = 5;
-  const timestamps = (samples || []).map((s) => Date.parse(s.timestamp || ""));
-  const validTs = timestamps.filter((t) => Number.isFinite(t));
+  const timestamps = (samples || []).map((s) => toTimestampMs(s));
+  const validTs = timestamps.filter((t) => t !== null);
   const tMin = validTs.length ? Math.min(...validTs) : 0;
   const tMax = validTs.length ? Math.max(...validTs) : 1;
-  const fallbackDurationMs = Math.max((values.length - 1) * WS_PERIOD_MS, 1);
+  const fallbackDurationMs = Math.max(((samples || []).length - 1) * WS_PERIOD_MS, 1);
+
   for (let i = 0; i < xTicks; i += 1) {
     const ratio = i / (xTicks - 1);
     const x = left + ratio * plotWidth;
@@ -168,34 +195,227 @@ function drawSeries(canvasId, samples, field, color, unit) {
   ctx.rect(left, top, plotWidth, plotHeight);
   ctx.stroke();
 
-  ctx.strokeStyle = color;
+  for (const def of seriesDefs) {
+    ctx.strokeStyle = def.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    let penDown = false;
+    (samples || []).forEach((sample, idx) => {
+      const value = sample[def.field];
+      if (value === null || value === undefined || !Number.isFinite(value)) {
+        penDown = false;
+        return;
+      }
+      const x = left + (idx / Math.max((samples || []).length - 1, 1)) * plotWidth;
+      const y = top + (1 - (value - min) / (max - min)) * plotHeight;
+      if (!penDown) {
+        ctx.moveTo(x, y);
+        penDown = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    ctx.stroke();
+  }
+
+  let legendX = left + 8;
+  const legendY = top + 12;
+  for (const def of seriesDefs) {
+    ctx.fillStyle = def.color;
+    ctx.fillRect(legendX, legendY - 8, 8, 8);
+    ctx.fillStyle = "rgba(210,224,242,0.95)";
+    ctx.fillText(def.name, legendX + 12, legendY);
+    legendX += 64;
+  }
+}
+
+function drawSeries(canvasId, samples, field, color, unit) {
+  drawMultiSeries(canvasId, samples, [{ name: "value", field, color }], unit);
+}
+
+function drawTrajectory(canvasId, samples, xField, yField, unit) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) {
+    return;
+  }
+
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+
+  const left = 46;
+  const right = 12;
+  const top = 14;
+  const bottom = 30;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+
+  const points = (samples || [])
+    .map((sample) => ({ x: sample[xField], y: sample[yField] }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+
+  if (points.length < 2) {
+    drawNoData(ctx, left, top);
+    return;
+  }
+
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  let maxAbs = Math.max(
+    Math.abs(Math.min(...xs)),
+    Math.abs(Math.max(...xs)),
+    Math.abs(Math.min(...ys)),
+    Math.abs(Math.max(...ys))
+  );
+  maxAbs = Math.max(maxAbs, 0.25);
+  maxAbs *= 1.15;
+
+  ctx.fillStyle = "rgba(186, 203, 224, 0.75)";
+  ctx.font = "11px Segoe UI, sans-serif";
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 1;
+
+  const ticks = 5;
+  for (let i = 0; i < ticks; i += 1) {
+    const ratio = i / (ticks - 1);
+    const x = left + ratio * plotWidth;
+    const y = top + ratio * plotHeight;
+
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, top + plotHeight);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(left + plotWidth, y);
+    ctx.stroke();
+  }
+
+  const x0 = left + ((0 - (-maxAbs)) / (2 * maxAbs)) * plotWidth;
+  const y0 = top + (1 - ((0 - (-maxAbs)) / (2 * maxAbs))) * plotHeight;
+
+  ctx.strokeStyle = "rgba(255,255,255,0.4)";
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  ctx.moveTo(x0, top);
+  ctx.lineTo(x0, top + plotHeight);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(left, y0);
+  ctx.lineTo(left + plotWidth, y0);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(186, 203, 224, 0.85)";
+  ctx.fillText(`-${maxAbs.toFixed(2)} ${unit}`, left, top + plotHeight + 18);
+  ctx.fillText(`${maxAbs.toFixed(2)} ${unit}`, left + plotWidth - 48, top + plotHeight + 18);
+  ctx.fillText(`Y +${maxAbs.toFixed(2)} ${unit}`, left + 6, top + 12);
+
+  ctx.strokeStyle = "#6dceff";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  let penDown = false;
-  values.forEach((value, idx) => {
-    if (value === null || value === undefined || !Number.isFinite(value)) {
-      penDown = false;
-      return;
-    }
-    const x = left + (idx / Math.max(values.length - 1, 1)) * plotWidth;
-    const y = top + (1 - (value - min) / (max - min)) * plotHeight;
-    if (!penDown) {
+  points.forEach((point, index) => {
+    const x = left + ((point.x - (-maxAbs)) / (2 * maxAbs)) * plotWidth;
+    const y = top + (1 - (point.y - (-maxAbs)) / (2 * maxAbs)) * plotHeight;
+    if (index === 0) {
       ctx.moveTo(x, y);
-      penDown = true;
     } else {
       ctx.lineTo(x, y);
     }
   });
   ctx.stroke();
 
-  const latest = filtered[filtered.length - 1];
-  ctx.fillStyle = color;
-  ctx.fillText(`latest ${latest.toFixed(Math.max(3, decimals))} ${unit}`, left + 6, top + 12);
-  ctx.fillText(
-    `range ${rawMin.toFixed(Math.max(3, decimals))} .. ${rawMax.toFixed(Math.max(3, decimals))} ${unit}`,
-    left + 6,
-    top + 24
-  );
+  const latest = points[points.length - 1];
+  const latestX = left + ((latest.x - (-maxAbs)) / (2 * maxAbs)) * plotWidth;
+  const latestY = top + (1 - (latest.y - (-maxAbs)) / (2 * maxAbs)) * plotHeight;
+
+  ctx.fillStyle = "#ffca66";
+  ctx.beginPath();
+  ctx.arc(latestX, latestY, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillText(`latest X=${latest.x.toFixed(2)} Y=${latest.y.toFixed(2)} ${unit}`, left + 8, top + 28);
+}
+
+function normalizeAngleDeg(angle) {
+  let value = angle;
+  while (value > 180) {
+    value -= 360;
+  }
+  while (value <= -180) {
+    value += 360;
+  }
+  return value;
+}
+
+function buildGyroEstimate(samples) {
+  const derived = [];
+  let rollDeg = 0.0;
+  let pitchDeg = 0.0;
+  let yawDeg = 0.0;
+  let posX = 0.0;
+  let posY = 0.0;
+  let velX = 0.0;
+  let velY = 0.0;
+  let lastTs = null;
+  let gyroCount = 0;
+
+  for (const sample of samples || []) {
+    const gx = Number.isFinite(sample.gyr_x) ? sample.gyr_x : null;
+    const gy = Number.isFinite(sample.gyr_y) ? sample.gyr_y : null;
+    const gz = Number.isFinite(sample.gyr_z) ? sample.gyr_z : null;
+    const hasGyro = gx !== null || gy !== null || gz !== null;
+
+    const currentTs = toTimestampMs(sample);
+    let dt = 0.1;
+    if (lastTs !== null && currentTs !== null) {
+      dt = clamp((currentTs - lastTs) / 1000.0, 0.01, 0.5);
+    }
+
+    if (hasGyro) {
+      const gxr = gx === null ? 0.0 : gx;
+      const gyr = gy === null ? 0.0 : gy;
+      const gzr = gz === null ? 0.0 : gz;
+
+      rollDeg += gxr * dt;
+      pitchDeg += gyr * dt;
+      yawDeg = normalizeAngleDeg(yawDeg + gzr * dt);
+
+      const rollRad = (clamp(rollDeg, -80, 80) * Math.PI) / 180.0;
+      const pitchRad = (clamp(pitchDeg, -80, 80) * Math.PI) / 180.0;
+
+      const ax = clamp(9.80665 * Math.tan(pitchRad), -6.0, 6.0);
+      const ay = clamp(-9.80665 * Math.tan(rollRad), -6.0, 6.0);
+
+      const damping = Math.exp(-0.45 * dt);
+      velX = (velX + ax * dt) * damping;
+      velY = (velY + ay * dt) * damping;
+
+      posX += velX * dt;
+      posY += velY * dt;
+      gyroCount += 1;
+    }
+
+    derived.push({
+      timestamp: sample.timestamp,
+      roll_deg: hasGyro ? rollDeg : null,
+      pitch_deg: hasGyro ? pitchDeg : null,
+      yaw_deg: hasGyro ? yawDeg : null,
+      pos_x_m: hasGyro ? posX : null,
+      pos_y_m: hasGyro ? posY : null,
+    });
+
+    if (currentTs !== null) {
+      lastTs = currentTs;
+    }
+  }
+
+  return {
+    samples: derived,
+    hasGyroData: gyroCount > 0,
+    latest: derived.length > 0 ? derived[derived.length - 1] : null,
+  };
 }
 
 function updateView(status, latest, samples) {
@@ -224,51 +444,80 @@ function updateView(status, latest, samples) {
       ? "Age derniere trame: N/A"
       : `Age derniere trame: ${status.last_frame_age_s.toFixed(2)} s`
   );
+
   if (!replayMode) {
     const mode = status.source_mode || "unknown";
     const detail = status.source_detail ? ` (${status.source_detail})` : "";
     setText("mode-label", `Mode: live websocket [${mode}]${detail}`);
   }
 
+  const derived = buildGyroEstimate(samples || []);
+  const latestDerived = derived.latest;
+
   if (latest) {
     setText("frame-id", String(latest.frame_id));
-    setText("altitude", fmt(latest.altitude, 2, " m"));
-    setText("pression", fmt(latest.pression, 2, " hPa"));
+    setText("gyro-x", fmt(latest.gyr_x, 2, " °/s"));
+    setText("gyro-y", fmt(latest.gyr_y, 2, " °/s"));
+    setText("gyro-z", fmt(latest.gyr_z, 2, " °/s"));
     setText("vbat", fmt(latest.v_bat, 3, " V"));
-    setText("temp-imu", fmt(latest.temp_imu, 2, " °C"));
-    setText("temp-bmp", fmt(latest.temp_bmp, 2, " °C"));
   }
 
-  drawSeries("chart-altitude", samples || [], "altitude", "#63b3ff", "m");
-  drawSeries("chart-pression", samples || [], "pression", "#4fe2b5", "hPa");
-  drawSeries("chart-vbat", samples || [], "v_bat", "#ffca66", "V");
+  if (latestDerived) {
+    const px = latestDerived.pos_x_m;
+    const py = latestDerived.pos_y_m;
+    const dist = Number.isFinite(px) && Number.isFinite(py) ? Math.sqrt(px * px + py * py) : null;
+    setText("roll-angle", fmt(latestDerived.roll_deg, 1, " °"));
+    setText("pitch-angle", fmt(latestDerived.pitch_deg, 1, " °"));
+    setText("yaw-angle", fmt(latestDerived.yaw_deg, 1, " °"));
+    setText("pos-x", fmt(px, 2, " m"));
+    setText("pos-y", fmt(py, 2, " m"));
+    setText("pos-dist", fmt(dist, 2, " m"));
+  }
 
-  if (latest) {
+  drawMultiSeries(
+    "chart-gyro-rates",
+    samples || [],
+    [
+      { name: "X", field: "gyr_x", color: "#63b3ff" },
+      { name: "Y", field: "gyr_y", color: "#4fe2b5" },
+      { name: "Z", field: "gyr_z", color: "#ffca66" },
+    ],
+    "°/s"
+  );
+
+  drawMultiSeries(
+    "chart-angles",
+    derived.samples,
+    [
+      { name: "Roll", field: "roll_deg", color: "#6dceff" },
+      { name: "Pitch", field: "pitch_deg", color: "#8ef4c2" },
+      { name: "Yaw", field: "yaw_deg", color: "#ffd479" },
+    ],
+    "°"
+  );
+
+  drawSeries("chart-yaw", derived.samples, "yaw_deg", "#ffd479", "°");
+  drawTrajectory("chart-xy", derived.samples, "pos_x_m", "pos_y_m", "m");
+
+  if (latest && latest.v_bat !== null && latest.v_bat !== undefined) {
     const battery = latest.v_bat;
-    const tempImu = latest.temp_imu;
-    const tempBmp = latest.temp_bmp;
-
-    if (battery === null || battery === undefined) {
-      setHealth("health-battery", "Batterie", "N/A", "bad");
-    } else if (battery < 3.4) {
+    if (battery < 3.4) {
       setHealth("health-battery", "Batterie", `${battery.toFixed(2)} V`, "bad");
     } else if (battery < 3.6) {
       setHealth("health-battery", "Batterie", `${battery.toFixed(2)} V`, "warn");
     } else {
       setHealth("health-battery", "Batterie", `${battery.toFixed(2)} V`, "good");
     }
+  } else {
+    setHealth("health-battery", "Batterie", "N/A", "bad");
+  }
 
-    const maxTemp = Math.max(
-      tempImu === null ? -1000 : tempImu,
-      tempBmp === null ? -1000 : tempBmp
-    );
-    if (maxTemp > 70) {
-      setHealth("health-temp", "Temperature", `${maxTemp.toFixed(1)} °C`, "bad");
-    } else if (maxTemp > 55) {
-      setHealth("health-temp", "Temperature", `${maxTemp.toFixed(1)} °C`, "warn");
-    } else {
-      setHealth("health-temp", "Temperature", `${maxTemp.toFixed(1)} °C`, "good");
-    }
+  if (!derived.hasGyroData) {
+    setHealth("health-nav", "Navigation gyro", "ABSENTE", "bad");
+  } else if ((status.rx_fps || 0) < 6.0) {
+    setHealth("health-nav", "Navigation gyro", "INSTABLE", "warn");
+  } else {
+    setHealth("health-nav", "Navigation gyro", "OK", "good");
   }
 
   if (!replayMode && !status.link_ok) {
@@ -509,7 +758,7 @@ function initControls() {
   const simBtn = document.getElementById("mode-sim-btn");
   if (simBtn) {
     simBtn.addEventListener("click", async () => {
-      setText("mode-label", "Mode: switch vers simulé...");
+      setText("mode-label", "Mode: switch vers simule...");
       try {
         await switchSource("sim");
       } catch (err) {
@@ -522,7 +771,7 @@ function initControls() {
   const realBtn = document.getElementById("mode-real-btn");
   if (realBtn) {
     realBtn.addEventListener("click", async () => {
-      setText("mode-label", "Mode: switch vers réel...");
+      setText("mode-label", "Mode: switch vers reel...");
       try {
         await switchSource("serial");
       } catch (err) {

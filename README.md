@@ -48,13 +48,13 @@ export STRATOS_SERIAL_BAUD=9600
 python3 run_web.py
 ```
 
-Sur Windows, utiliser un port de type `COM3`.
+Sur Windows, utiliser un port de type `COM4`.
 
 ## Variables d'environnement
 
 - `STRATOS_SOURCE` : `serial` (défaut), `sim` ou `auto`
 - `STRATOS_SIM_HZ` : fréquence simulation, défaut `10.0`
-- `STRATOS_SERIAL_PORT` : port série (`COM3`, `/dev/ttyUSB0`, ...)
+- `STRATOS_SERIAL_PORT` : port série (`COM4`, `/dev/ttyUSB0`, ...)
 - `STRATOS_SERIAL_BAUD` : défaut `9600`
 - `STRATOS_SERIAL_TIMEOUT` : défaut `1.0`
 - `STRATOS_HISTORY_SIZE` : profondeur historique en mémoire (défaut `20000`)

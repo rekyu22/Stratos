@@ -195,7 +195,7 @@ Retourne `None` si la longueur est incorrecte, si STX/ETX ne correspondent pas, 
 **Classe exposée :** `SerialReader`
 
 ```python
-reader = SerialReader(port="COM3", baudrate=9600, timeout=1.0)
+reader = SerialReader(port="COM4", baudrate=9600, timeout=1.0)
 reader.open()
 raw = reader.read_frame()   # retourne bytes ou None
 reader.close()
@@ -228,7 +228,7 @@ Les valeurs `None` sont écrites `N/A` dans le CSV.
 
 **Constantes à adapter selon l'environnement :**
 ```python
-SERIAL_PORT    = "COM3"       # Windows: "COMx" -- Linux: "/dev/ttyUSB0"
+SERIAL_PORT    = "COM4"       # Windows: "COMx" -- Linux: "/dev/ttyUSB0"
 SERIAL_BAUD    = 9600
 LINK_TIMEOUT_S = 2.0          # secondes avant affichage "LIAISON PERDUE"
 ```

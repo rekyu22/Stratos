@@ -9,7 +9,10 @@
 <body>
   <main class="page">
     <header class="header">
-      <h1>STRATOS Ground Station</h1>
+      <div>
+        <h1>STRATOS Ground Station</h1>
+        <p class="subtitle">Navigation inertielle estimée depuis la base (gyroscope uniquement)</p>
+      </div>
       <div id="link-badge" class="badge bad">Liaison inconnue</div>
     </header>
 
@@ -27,27 +30,39 @@
 
     <section class="cards" id="latest-cards">
       <article class="card"><h2>Trame</h2><p id="frame-id">-</p></article>
-      <article class="card"><h2>Altitude</h2><p id="altitude">-</p></article>
-      <article class="card"><h2>Pression</h2><p id="pression">-</p></article>
+      <article class="card"><h2>Gyro X</h2><p id="gyro-x">-</p></article>
+      <article class="card"><h2>Gyro Y</h2><p id="gyro-y">-</p></article>
+      <article class="card"><h2>Gyro Z</h2><p id="gyro-z">-</p></article>
+      <article class="card"><h2>Roll</h2><p id="roll-angle">-</p></article>
+      <article class="card"><h2>Pitch</h2><p id="pitch-angle">-</p></article>
+      <article class="card"><h2>Yaw</h2><p id="yaw-angle">-</p></article>
+      <article class="card"><h2>Position X</h2><p id="pos-x">-</p></article>
+      <article class="card"><h2>Position Y</h2><p id="pos-y">-</p></article>
+      <article class="card"><h2>Distance base</h2><p id="pos-dist">-</p></article>
       <article class="card"><h2>Batterie</h2><p id="vbat">-</p></article>
-      <article class="card"><h2>Temp IMU</h2><p id="temp-imu">-</p></article>
-      <article class="card"><h2>Temp BMP</h2><p id="temp-bmp">-</p></article>
     </section>
 
     <section class="chart-grid">
       <article class="panel">
-        <h3>Altitude (m)</h3>
-        <canvas id="chart-altitude" width="900" height="300"></canvas>
+        <h3>Gyroscope (°/s)</h3>
+        <canvas id="chart-gyro-rates" width="900" height="320"></canvas>
       </article>
       <article class="panel">
-        <h3>Pression (hPa)</h3>
-        <canvas id="chart-pression" width="900" height="300"></canvas>
+        <h3>Angles intégrés (°)</h3>
+        <canvas id="chart-angles" width="900" height="320"></canvas>
       </article>
       <article class="panel panel-wide">
-        <h3>Batterie (V)</h3>
-        <canvas id="chart-vbat" width="900" height="300"></canvas>
+        <h3>Position relative XY estimée (m)</h3>
+        <canvas id="chart-xy" width="900" height="340"></canvas>
+      </article>
+      <article class="panel panel-wide">
+        <h3>Cap (Yaw, °)</h3>
+        <canvas id="chart-yaw" width="900" height="260"></canvas>
       </article>
     </section>
+    <p class="estimate-note">
+      Estimation basée uniquement sur le gyroscope: utile pour tendance court terme, dérive cumulative possible sans fusion capteurs.
+    </p>
 
     <section class="status-row">
       <span id="frames-received">Recues: -</span>
@@ -64,7 +79,7 @@
       <span id="health-link" class="health bad">Liaison: N/A</span>
       <span id="health-integrity" class="health bad">Integrite: N/A</span>
       <span id="health-battery" class="health bad">Batterie: N/A</span>
-      <span id="health-temp" class="health bad">Temperature: N/A</span>
+      <span id="health-nav" class="health bad">Navigation gyro: N/A</span>
     </section>
   </main>
   <script src="/static/app.js"></script>
