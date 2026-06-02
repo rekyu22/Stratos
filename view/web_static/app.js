@@ -349,6 +349,32 @@ function normalizeAngleDeg(angle) {
   return value;
 }
 
+function gyroMagnitude(sample) {
+  if (!sample) {
+    return null;
+  }
+  const gx = Number.isFinite(sample.gyr_x) ? sample.gyr_x : null;
+  const gy = Number.isFinite(sample.gyr_y) ? sample.gyr_y : null;
+  const gz = Number.isFinite(sample.gyr_z) ? sample.gyr_z : null;
+  if (gx === null && gy === null && gz === null) {
+    return null;
+  }
+  return Math.sqrt((gx || 0) ** 2 + (gy || 0) ** 2 + (gz || 0) ** 2);
+}
+
+function gyroStabilityLabel(speedDps) {
+  if (speedDps === null || speedDps === undefined || !Number.isFinite(speedDps)) {
+    return "N/A";
+  }
+  if (speedDps < 5.0) {
+    return "Stable";
+  }
+  if (speedDps < 25.0) {
+    return "Mobile";
+  }
+  return "Rotation forte";
+}
+
 function buildGyroEstimate(samples) {
   const derived = [];
   let rollDeg = 0.0;
@@ -455,11 +481,12 @@ function updateView(status, latest, samples) {
   const latestDerived = derived.latest;
 
   if (latest) {
-    setText("frame-id", String(latest.frame_id));
+    const speedDps = gyroMagnitude(latest);
     setText("gyro-x", fmt(latest.gyr_x, 2, " °/s"));
     setText("gyro-y", fmt(latest.gyr_y, 2, " °/s"));
     setText("gyro-z", fmt(latest.gyr_z, 2, " °/s"));
-    setText("vbat", fmt(latest.v_bat, 3, " V"));
+    setText("gyro-speed", fmt(speedDps, 2, " °/s"));
+    setText("gyro-stability", gyroStabilityLabel(speedDps));
   }
 
   if (latestDerived) {
@@ -498,19 +525,6 @@ function updateView(status, latest, samples) {
 
   drawSeries("chart-yaw", derived.samples, "yaw_deg", "#ffd479", "°");
   drawTrajectory("chart-xy", derived.samples, "pos_x_m", "pos_y_m", "m");
-
-  if (latest && latest.v_bat !== null && latest.v_bat !== undefined) {
-    const battery = latest.v_bat;
-    if (battery < 3.4) {
-      setHealth("health-battery", "Batterie", `${battery.toFixed(2)} V`, "bad");
-    } else if (battery < 3.6) {
-      setHealth("health-battery", "Batterie", `${battery.toFixed(2)} V`, "warn");
-    } else {
-      setHealth("health-battery", "Batterie", `${battery.toFixed(2)} V`, "good");
-    }
-  } else {
-    setHealth("health-battery", "Batterie", "N/A", "bad");
-  }
 
   if (!derived.hasGyroData) {
     setHealth("health-nav", "Navigation gyro", "ABSENTE", "bad");
