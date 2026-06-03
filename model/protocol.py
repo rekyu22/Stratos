@@ -3,14 +3,18 @@ from dataclasses import dataclass
 from typing import Optional
 
 FRAME_LENGTH   = 31
+GYRO_FRAME_LENGTH = 10
 LEGACY_SHORT_FRAME_LENGTH = 12
 STX            = 0xAA
 ETX            = 0x55
 SENSOR_ABSENT  = 0xFFFF
 
 FRAME_FORMAT = ">H hhhhhh h I h i H"
+GYRO_FRAME_FORMAT = ">Bhhh"
 DATA_START   = 1
 DATA_END     = 29
+GYRO_DATA_START = 1
+GYRO_DATA_END = 8
 
 
 @dataclass
@@ -41,7 +45,41 @@ def _verify_checksum(raw: bytes) -> bool:
     return computed == expected
 
 
+def _verify_gyro_checksum(raw: bytes) -> bool:
+    expected = raw[GYRO_DATA_END]
+    computed = 0
+    for byte in raw[GYRO_DATA_START:GYRO_DATA_END]:
+        computed ^= byte
+    return computed == expected
+
+
 def parse_frame(raw: bytes) -> Optional[StratosFrame]:
+    if len(raw) == GYRO_FRAME_LENGTH:
+        if raw[0] != STX or raw[-1] != ETX:
+            return None
+        if not _verify_gyro_checksum(raw):
+            return None
+
+        frame_id, gyr_x_raw, gyr_y_raw, gyr_z_raw = struct.unpack_from(
+            GYRO_FRAME_FORMAT,
+            raw,
+            GYRO_DATA_START,
+        )
+        return StratosFrame(
+            frame_id=frame_id,
+            acc_x=None,
+            acc_y=None,
+            acc_z=None,
+            gyr_x=gyr_x_raw / 10.0,
+            gyr_y=gyr_y_raw / 10.0,
+            gyr_z=gyr_z_raw / 10.0,
+            temp_imu=None,
+            pression=None,
+            temp_bmp=None,
+            altitude=None,
+            v_bat=None,
+        )
+
     if len(raw) == LEGACY_SHORT_FRAME_LENGTH:
         if raw[0] != STX:
             return None

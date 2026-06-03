@@ -1,7 +1,7 @@
-import unittest
 import struct
+import unittest
 
-from model.protocol import ETX, FRAME_FORMAT, STX, parse_frame
+from model.protocol import ETX, FRAME_FORMAT, GYRO_FRAME_FORMAT, STX, parse_frame
 from model.serial_reader import SerialReader
 
 
@@ -50,6 +50,12 @@ def _build_frame(
     return bytes([STX]) + payload + bytes([checksum, ETX])
 
 
+def _build_gyro_frame(frame_id: int, gyr_x_raw: int, gyr_y_raw: int, gyr_z_raw: int) -> bytes:
+    payload = struct.pack(GYRO_FRAME_FORMAT, frame_id, gyr_x_raw, gyr_y_raw, gyr_z_raw)
+    checksum = _xor(payload)
+    return bytes([STX]) + payload + bytes([checksum, ETX])
+
+
 class TestTelemetryParser(unittest.TestCase):
 
     def test_parse_valid_frame(self) -> None:
@@ -68,6 +74,22 @@ class TestTelemetryParser(unittest.TestCase):
     def test_reject_invalid_checksum(self) -> None:
         frame = parse_frame(bytes.fromhex(INVALID_CHECKSUM_FRAME_HEX))
         self.assertIsNone(frame)
+
+    def test_parse_valid_gyro_short_frame(self) -> None:
+        raw = _build_gyro_frame(frame_id=42, gyr_x_raw=15, gyr_y_raw=-7, gyr_z_raw=250)
+        frame = parse_frame(raw)
+        self.assertIsNotNone(frame)
+        assert frame is not None
+        self.assertEqual(frame.frame_id, 42)
+        self.assertAlmostEqual(frame.gyr_x, 1.5)
+        self.assertAlmostEqual(frame.gyr_y, -0.7)
+        self.assertAlmostEqual(frame.gyr_z, 25.0)
+        self.assertIsNone(frame.v_bat)
+
+    def test_reject_gyro_short_frame_bad_checksum(self) -> None:
+        raw = bytearray(_build_gyro_frame(frame_id=42, gyr_x_raw=15, gyr_y_raw=-7, gyr_z_raw=250))
+        raw[8] ^= 0x01
+        self.assertIsNone(parse_frame(bytes(raw)))
 
     def test_absent_sentinels_are_none(self) -> None:
         raw = _build_frame(
@@ -116,6 +138,16 @@ class TestTelemetryParser(unittest.TestCase):
         extracted_2 = reader._extract_frame()
         self.assertEqual(extracted_1, short_1)
         self.assertEqual(extracted_2, short_2)
+
+    def test_serial_reader_extracts_gyro_short_frames(self) -> None:
+        raw_1 = _build_gyro_frame(frame_id=1, gyr_x_raw=10, gyr_y_raw=20, gyr_z_raw=30)
+        raw_2 = _build_gyro_frame(frame_id=2, gyr_x_raw=-10, gyr_y_raw=-20, gyr_z_raw=-30)
+        reader = SerialReader(port="TEST")
+        reader._buffer = bytearray(b"\x00\x11" + raw_1 + raw_2)
+        extracted_1 = reader._extract_frame()
+        extracted_2 = reader._extract_frame()
+        self.assertEqual(extracted_1, raw_1)
+        self.assertEqual(extracted_2, raw_2)
 
 
 if __name__ == "__main__":

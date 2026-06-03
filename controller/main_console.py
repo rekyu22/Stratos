@@ -1,4 +1,5 @@
 import os
+import math
 import time
 
 from model.logger import TelemetryLogger
@@ -17,26 +18,23 @@ def _format_field(label: str, value, unit: str) -> str:
 
 
 def display_frame(frame: StratosFrame) -> None:
+    gyro_speed = None
+    if frame.gyr_x is not None or frame.gyr_y is not None or frame.gyr_z is not None:
+        gyro_speed = math.sqrt(
+            (frame.gyr_x or 0.0) ** 2 +
+            (frame.gyr_y or 0.0) ** 2 +
+            (frame.gyr_z or 0.0) ** 2
+        )
+
     print("\033[2J\033[H", end="")
     print("=" * 45)
-    print(f"  STRATOS -- Trame #{frame.frame_id}")
+    print(f"  STRATOS GYRO -- Trame #{frame.frame_id}")
     print("=" * 45)
-    print("  [ IMU -- Accelerometre ]")
-    print(_format_field("Acc X", frame.acc_x, "g"))
-    print(_format_field("Acc Y", frame.acc_y, "g"))
-    print(_format_field("Acc Z", frame.acc_z, "g"))
-    print("  [ IMU -- Gyroscope ]")
+    print("  [ Gyroscope ]")
     print(_format_field("Gyr X", frame.gyr_x, "°/s"))
     print(_format_field("Gyr Y", frame.gyr_y, "°/s"))
     print(_format_field("Gyr Z", frame.gyr_z, "°/s"))
-    print("  [ Temperatures ]")
-    print(_format_field("Temp IMU", frame.temp_imu, "°C"))
-    print(_format_field("Temp BMP", frame.temp_bmp, "°C"))
-    print("  [ Barometre ]")
-    print(_format_field("Pression", frame.pression, "hPa"))
-    print(_format_field("Altitude", frame.altitude, "m"))
-    print("  [ Batterie ]")
-    print(_format_field("Tension bat.", frame.v_bat, "V"))
+    print(_format_field("Rotation", gyro_speed, "°/s"))
     print("=" * 45)
 
 

@@ -8,6 +8,7 @@ let pollingTimer = null;
 let modeOverrideOnce = null;
 let sampleBuffer = [];
 let lastFrameId = null;
+let gyroBias = { gyr_x: 0, gyr_y: 0, gyr_z: 0 };
 
 function fmt(value, decimals = 3, unit = "") {
   if (value === null || value === undefined || !Number.isFinite(value)) {
@@ -87,6 +88,44 @@ function clamp(value, low, high) {
 function toTimestampMs(sample) {
   const value = Date.parse((sample && sample.timestamp) || "");
   return Number.isFinite(value) ? value : null;
+}
+
+function calibrateSample(sample) {
+  if (!sample) {
+    return sample;
+  }
+  return {
+    ...sample,
+    gyr_x: Number.isFinite(sample.gyr_x) ? sample.gyr_x - gyroBias.gyr_x : sample.gyr_x,
+    gyr_y: Number.isFinite(sample.gyr_y) ? sample.gyr_y - gyroBias.gyr_y : sample.gyr_y,
+    gyr_z: Number.isFinite(sample.gyr_z) ? sample.gyr_z - gyroBias.gyr_z : sample.gyr_z,
+  };
+}
+
+function calibratedSamples(samples) {
+  return (samples || []).map((sample) => calibrateSample(sample));
+}
+
+function tareGyro() {
+  const valid = sampleBuffer
+    .filter(
+      (sample) =>
+        Number.isFinite(sample.gyr_x) &&
+        Number.isFinite(sample.gyr_y) &&
+        Number.isFinite(sample.gyr_z)
+    )
+    .slice(-20);
+
+  if (valid.length === 0) {
+    return "Tarage gyro impossible: aucune trame gyro";
+  }
+
+  gyroBias = {
+    gyr_x: valid.reduce((sum, sample) => sum + sample.gyr_x, 0) / valid.length,
+    gyr_y: valid.reduce((sum, sample) => sum + sample.gyr_y, 0) / valid.length,
+    gyr_z: valid.reduce((sum, sample) => sum + sample.gyr_z, 0) / valid.length,
+  };
+  return `Gyro tare: X ${gyroBias.gyr_x.toFixed(2)} / Y ${gyroBias.gyr_y.toFixed(2)} / Z ${gyroBias.gyr_z.toFixed(2)} °/s`;
 }
 
 function drawNoData(ctx, left, top) {
@@ -477,14 +516,16 @@ function updateView(status, latest, samples) {
     setText("mode-label", `Mode: live websocket [${mode}]${detail}`);
   }
 
-  const derived = buildGyroEstimate(samples || []);
+  const displaySamples = calibratedSamples(samples || []);
+  const displayLatest = calibrateSample(latest);
+  const derived = buildGyroEstimate(displaySamples);
   const latestDerived = derived.latest;
 
-  if (latest) {
-    const speedDps = gyroMagnitude(latest);
-    setText("gyro-x", fmt(latest.gyr_x, 2, " °/s"));
-    setText("gyro-y", fmt(latest.gyr_y, 2, " °/s"));
-    setText("gyro-z", fmt(latest.gyr_z, 2, " °/s"));
+  if (displayLatest) {
+    const speedDps = gyroMagnitude(displayLatest);
+    setText("gyro-x", fmt(displayLatest.gyr_x, 2, " °/s"));
+    setText("gyro-y", fmt(displayLatest.gyr_y, 2, " °/s"));
+    setText("gyro-z", fmt(displayLatest.gyr_z, 2, " °/s"));
     setText("gyro-speed", fmt(speedDps, 2, " °/s"));
     setText("gyro-stability", gyroStabilityLabel(speedDps));
   }
@@ -503,7 +544,7 @@ function updateView(status, latest, samples) {
 
   drawMultiSeries(
     "chart-gyro-rates",
-    samples || [],
+    displaySamples,
     [
       { name: "X", field: "gyr_x", color: "#63b3ff" },
       { name: "Y", field: "gyr_y", color: "#4fe2b5" },
@@ -769,6 +810,16 @@ function trimSampleBuffer() {
 }
 
 function initControls() {
+  const tareBtn = document.getElementById("tare-gyro-btn");
+  if (tareBtn) {
+    tareBtn.addEventListener("click", () => {
+      const message = tareGyro();
+      const latest = sampleBuffer.length ? sampleBuffer[sampleBuffer.length - 1] : null;
+      updateView(replayStatus(sampleBuffer), latest, sampleBuffer);
+      setText("mode-label", message);
+    });
+  }
+
   const simBtn = document.getElementById("mode-sim-btn");
   if (simBtn) {
     simBtn.addEventListener("click", async () => {

@@ -143,7 +143,7 @@ class TelemetryService:
                 if self._last_frame_time is not None:
                     self._intervals_s.append(now - self._last_frame_time)
                 if self._last_frame_id is not None:
-                    delta = (frame.frame_id - self._last_frame_id) & 0xFFFF
+                    delta = (frame.frame_id - self._last_frame_id) % 256
                     if delta == 0:
                         self._duplicate_frames += 1
                     elif delta > 1:

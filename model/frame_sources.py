@@ -1,11 +1,10 @@
 import random
-import math
 import struct
 import time
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
-from model.protocol import ETX, FRAME_FORMAT, STX
+from model.protocol import ETX, GYRO_FRAME_FORMAT, STX
 from model.serial_reader import SerialReader
 
 try:
@@ -73,7 +72,6 @@ class SimulatedFrameSource:
         self._altitude_target_cm = 220.0
         self._target_hold_s = 2.0
         self._vertical_speed_cms = 0.0
-        self._vertical_accel_mps2 = 0.0
         self._roll_deg = 0.0
         self._pitch_deg = 0.0
         self._yaw_rate_dps = 0.0
@@ -81,11 +79,6 @@ class SimulatedFrameSource:
         self._pitch_target_deg = 0.0
         self._last_roll_deg = 0.0
         self._last_pitch_deg = 0.0
-        self._pressure_pa = 100874.0
-        self._ambient_temp_c = 22.2
-        self._temp_imu_raw = 220.0
-        self._temp_bmp_raw = 2220.0
-        self._vbat_mv = 3980.0
 
     def open(self) -> None:
         self._opened = True
@@ -103,7 +96,7 @@ class SimulatedFrameSource:
             time.sleep(min(self._next_ts - now, self._period))
 
         self._next_ts += self._period
-        self._frame_id = (self._frame_id + 1) & 0xFFFF
+        self._frame_id = (self._frame_id + 1) & 0xFF
         return self._build_frame(self._frame_id)
 
     @property
@@ -133,7 +126,6 @@ class SimulatedFrameSource:
         self._vertical_speed_cms *= 0.985
         self._altitude_cm += self._vertical_speed_cms * dt + self._rng.uniform(-0.25, 0.25)
         self._altitude_cm = _clamp(self._altitude_cm, 80.0, 650.0)
-        self._vertical_accel_mps2 = accel_cmd_cms2 / 100.0
 
         self._last_roll_deg = self._roll_deg
         self._last_pitch_deg = self._pitch_deg
@@ -142,27 +134,6 @@ class SimulatedFrameSource:
         self._roll_deg = _clamp(self._roll_deg, -16.0, 16.0)
         self._pitch_deg = _clamp(self._pitch_deg, -16.0, 16.0)
 
-        roll_rad = math.radians(self._roll_deg)
-        pitch_rad = math.radians(self._pitch_deg)
-        gravity_mg = 1000.0
-        vertical_term_mg = (self._vertical_accel_mps2 / 9.80665) * 1000.0
-
-        acc_x_raw = _avoid_sentinel_int16(
-            int(round(gravity_mg * math.sin(pitch_rad) + self._rng.uniform(-3.0, 3.0)))
-        )
-        acc_y_raw = _avoid_sentinel_int16(
-            int(round(-gravity_mg * math.sin(roll_rad) + self._rng.uniform(-3.0, 3.0)))
-        )
-        acc_z_raw = _avoid_sentinel_int16(
-            int(
-                round(
-                    gravity_mg * math.cos(roll_rad) * math.cos(pitch_rad)
-                    + vertical_term_mg
-                    + self._rng.uniform(-4.0, 4.0)
-                )
-            )
-        )
-
         gyr_x_dps = (self._roll_deg - self._last_roll_deg) / dt
         gyr_y_dps = (self._pitch_deg - self._last_pitch_deg) / dt
         gyr_z_dps = self._yaw_rate_dps + self._rng.uniform(-2.0, 2.0)
@@ -170,38 +141,12 @@ class SimulatedFrameSource:
         gyr_y_raw = _avoid_sentinel_int16(int(round(gyr_y_dps * 10.0)))
         gyr_z_raw = _avoid_sentinel_int16(int(round(gyr_z_dps * 10.0)))
 
-        altitude_delta_m = (self._altitude_cm - 150.0) / 100.0
-        pressure_ideal = 100874.0 * math.exp(-altitude_delta_m / 8434.5)
-        self._pressure_pa += (pressure_ideal - self._pressure_pa) * 0.32 + self._rng.uniform(-0.8, 0.8)
-
-        total_rotation = abs(gyr_x_dps) + abs(gyr_y_dps) + abs(gyr_z_dps)
-        imu_target_raw = (self._ambient_temp_c + 0.9 + 0.012 * total_rotation) * 10.0
-        self._temp_imu_raw += (imu_target_raw - self._temp_imu_raw) * 0.02 + self._rng.uniform(-0.05, 0.05)
-        self._temp_imu_raw = _clamp(self._temp_imu_raw, 210.0, 260.0)
-
-        bmp_target_raw = self._ambient_temp_c * 100.0
-        self._temp_bmp_raw += (bmp_target_raw - self._temp_bmp_raw) * 0.01 + self._rng.uniform(-0.3, 0.3)
-        self._temp_bmp_raw = _clamp(self._temp_bmp_raw, 2100.0, 2600.0)
-
-        thrust_metric = 0.015 * total_rotation + 0.05 * abs(self._vertical_speed_cms) + 0.02 * abs(accel_cmd_cms2)
-        drain_mv_s = 0.8 + thrust_metric
-        self._vbat_mv -= drain_mv_s * dt
-        self._vbat_mv = _clamp(self._vbat_mv, 3400.0, 3950.0)
-
         payload = struct.pack(
-            FRAME_FORMAT,
+            GYRO_FRAME_FORMAT,
             frame_id,
-            acc_x_raw,
-            acc_y_raw,
-            acc_z_raw,
             gyr_x_raw,
             gyr_y_raw,
             gyr_z_raw,
-            int(round(self._temp_imu_raw)),
-            int(round(self._pressure_pa)),
-            int(round(self._temp_bmp_raw)),
-            int(round(self._altitude_cm)),
-            int(round(self._vbat_mv)),
         )
         checksum = _checksum(payload)
         return bytes([STX]) + payload + bytes([checksum, ETX])
