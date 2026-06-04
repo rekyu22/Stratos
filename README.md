@@ -79,9 +79,9 @@ L'IHM affiche uniquement les valeurs gyroscope et les estimations derivees : rot
 - `STRATOS_SIM_HZ` : fréquence simulation, défaut `10.0`
 - `STRATOS_SERIAL_PORT` : port série (`COM4`, `/dev/ttyUSB0`, ...)
 - `STRATOS_SERIAL_BAUD` : défaut `9600`
-- `STRATOS_SERIAL_TIMEOUT` : défaut `1.0`
-- `STRATOS_HISTORY_SIZE` : profondeur historique en mémoire (défaut `20000`)
-- `STRATOS_LOG` : `1` pour activer CSV, `0` pour désactiver
+- `STRATOS_SERIAL_TIMEOUT` : défaut `0.05`
+- `STRATOS_HISTORY_SIZE` : profondeur historique en mémoire (défaut `600`)
+- `STRATOS_LOG` : `1` pour activer CSV, `0` pour désactiver (défaut)
 - `STRATOS_HOST` : défaut `127.0.0.1`
 - `STRATOS_PORT` : défaut `8000`
 
@@ -92,6 +92,7 @@ L'IHM affiche uniquement les valeurs gyroscope et les estimations derivees : rot
 - `Perte estimée %` : estimation basée sur les sauts de `frame_id`.
 - `Rejet %` : trames invalides (checksum/format) sur total reçu.
 - Graphes : axe Y gradué en unités physiques et axe X en temps relatif (secondes).
+- Live web : fenêtre glissante de 300 points (30 s à 10 Hz) pour garder un rendu temps réel.
 
 ## Tests
 

@@ -1,5 +1,6 @@
-const MAX_POINTS = 20000;
-const WS_PERIOD_MS = 250;
+const MAX_POINTS = 300;
+const RENDER_MAX_POINTS = 400;
+const WS_PERIOD_MS = 100;
 
 let liveSocket = null;
 let replayMode = false;
@@ -104,6 +105,23 @@ function calibrateSample(sample) {
 
 function calibratedSamples(samples) {
   return (samples || []).map((sample) => calibrateSample(sample));
+}
+
+function downsample(samples, maxPoints = RENDER_MAX_POINTS) {
+  const values = samples || [];
+  if (values.length <= maxPoints) {
+    return values;
+  }
+  const step = Math.ceil(values.length / maxPoints);
+  const result = [];
+  for (let i = 0; i < values.length; i += step) {
+    result.push(values[i]);
+  }
+  const latest = values[values.length - 1];
+  if (result[result.length - 1] !== latest) {
+    result.push(latest);
+  }
+  return result;
 }
 
 function tareGyro() {
@@ -517,8 +535,9 @@ function updateView(status, latest, samples) {
   }
 
   const displaySamples = calibratedSamples(samples || []);
+  const renderSamples = downsample(displaySamples);
   const displayLatest = calibrateSample(latest);
-  const derived = buildGyroEstimate(displaySamples);
+  const derived = buildGyroEstimate(renderSamples);
   const latestDerived = derived.latest;
 
   if (displayLatest) {
@@ -544,7 +563,7 @@ function updateView(status, latest, samples) {
 
   drawMultiSeries(
     "chart-gyro-rates",
-    displaySamples,
+    renderSamples,
     [
       { name: "X", field: "gyr_x", color: "#63b3ff" },
       { name: "Y", field: "gyr_y", color: "#4fe2b5" },

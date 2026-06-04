@@ -22,13 +22,13 @@ INDEX_FILE = STATIC_DIR / "index.html"
 
 def _build_service() -> TelemetryService:
     mode = os.getenv("STRATOS_SOURCE", "serial").lower()
-    with_logger = os.getenv("STRATOS_LOG", "1") == "1"
+    with_logger = os.getenv("STRATOS_LOG", "0") == "1"
     logger = TelemetryLogger() if with_logger else None
     port = os.getenv("STRATOS_SERIAL_PORT")
     baud = int(os.getenv("STRATOS_SERIAL_BAUD", "9600"))
-    timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "1.0"))
+    timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "0.05"))
     hz = float(os.getenv("STRATOS_SIM_HZ", "10.0"))
-    history_size = int(os.getenv("STRATOS_HISTORY_SIZE", "20000"))
+    history_size = int(os.getenv("STRATOS_HISTORY_SIZE", "600"))
     source = _build_source(mode=mode, port=port, baud=baud, timeout=timeout, sim_hz=hz)
     return TelemetryService(source=source, logger=logger, history_size=history_size)
 
@@ -92,7 +92,7 @@ def api_latest() -> Dict[str, Any]:
 
 
 @app.get("/api/history")
-def api_history(points: int = Query(default=1200, ge=1, le=20000)) -> Dict[str, Any]:
+def api_history(points: int = Query(default=300, ge=1, le=2000)) -> Dict[str, Any]:
     return {"samples": service.get_history(limit=points)}
 
 
@@ -100,7 +100,7 @@ def api_history(points: int = Query(default=1200, ge=1, le=20000)) -> Dict[str, 
 def api_switch_source(payload: SourceSwitchRequest) -> Dict[str, Any]:
     default_port = os.getenv("STRATOS_SERIAL_PORT")
     default_baud = int(os.getenv("STRATOS_SERIAL_BAUD", "9600"))
-    default_timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "1.0"))
+    default_timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "0.05"))
     default_sim_hz = float(os.getenv("STRATOS_SIM_HZ", "10.0"))
 
     mode = payload.mode.lower()
@@ -166,9 +166,9 @@ def api_history_csv(points: int = Query(default=2000, ge=1, le=50000)) -> Respon
 @app.websocket("/ws/live")
 async def ws_live(websocket: WebSocket) -> None:
     await websocket.accept()
-    points = int(websocket.query_params.get("points", "20000"))
-    points = max(1, min(points, 50000))
-    period_ms = int(websocket.query_params.get("period_ms", "250"))
+    points = int(websocket.query_params.get("points", "300"))
+    points = max(1, min(points, 1000))
+    period_ms = int(websocket.query_params.get("period_ms", "100"))
     period_ms = max(100, min(period_ms, 2000))
     period_s = period_ms / 1000.0
     forced_mode = websocket.query_params.get("mode")
@@ -176,7 +176,7 @@ async def ws_live(websocket: WebSocket) -> None:
     if forced_mode:
         default_port = os.getenv("STRATOS_SERIAL_PORT")
         default_baud = int(os.getenv("STRATOS_SERIAL_BAUD", "9600"))
-        default_timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "1.0"))
+        default_timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "0.05"))
         default_sim_hz = float(os.getenv("STRATOS_SIM_HZ", "10.0"))
         try:
             current_mode = str(service.get_status().get("source_mode", ""))

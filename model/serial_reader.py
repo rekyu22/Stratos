@@ -9,7 +9,7 @@ except ModuleNotFoundError:
 
 class SerialReader:
 
-    def __init__(self, port: str, baudrate: int = 9600, timeout: float = 1.0):
+    def __init__(self, port: str, baudrate: int = 9600, timeout: float = 0.05):
         self._port     = port
         self._baudrate = baudrate
         self._timeout  = timeout
