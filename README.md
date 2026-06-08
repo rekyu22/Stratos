@@ -75,7 +75,9 @@ AA ID GYR_X_H GYR_X_L GYR_Y_H GYR_Y_L GYR_Z_H GYR_Z_L CHECKSUM 55
 
 L'auto-détection valide longueur, marqueurs et checksum avant extraction. La détection des pertes utilise un rollover `65536` pour la trame 31 octets et `256` pour la trame gyro courte.
 
-L'IHM affiche uniquement les valeurs gyroscope et les estimations dérivées : rotation, roll, pitch, yaw, position XY relative et distance base. Le bouton `Tarer gyro` moyenne les 20 dernières trames valides et soustrait ce biais aux affichages.
+L'IHM affiche le gyroscope, les angles relatifs et l'accélération en `g`. Un filtre passe-bas, une zone morte et une estimation adaptative de la gravité réduisent le bruit au repos. Le tarage IMU est automatique après 20 trames valides et peut être relancé avec le bouton `Tarer IMU`.
+
+Une position relative courte durée est proposée avec détection d'immobilité et remise à zéro de la vitesse (ZUPT). Elle reste indicative : sans GPS, UWB, baromètre valide ou autre référence externe, une IMU seule ne permet pas de garantir une position absolue durable. Le bouton `Réinitialiser position` redéfinit l'origine.
 
 ## Variables d'environnement
 

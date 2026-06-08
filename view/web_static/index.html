@@ -11,7 +11,7 @@
     <header class="header">
       <div>
         <h1>STRATOS Ground Station</h1>
-        <p class="subtitle">Navigation inertielle estimée depuis la base (gyroscope uniquement)</p>
+        <p class="subtitle">Mesures IMU filtrées en temps réel</p>
       </div>
       <div id="link-badge" class="badge bad">Liaison inconnue</div>
     </header>
@@ -19,7 +19,8 @@
     <section class="controls">
       <button id="mode-sim-btn" class="btn secondary" type="button">Mode simulé</button>
       <button id="mode-real-btn" class="btn secondary" type="button">Mode réel</button>
-      <button id="tare-gyro-btn" class="btn secondary" type="button">Tarer gyro</button>
+      <button id="tare-gyro-btn" class="btn secondary" type="button">Tarer IMU</button>
+      <button id="reset-position-btn" class="btn secondary" type="button">Réinitialiser position</button>
       <a class="btn" href="/api/history.csv?points=2000">Exporter CSV</a>
       <label class="btn file-btn">
         Charger replay CSV
@@ -38,9 +39,16 @@
       <article class="card"><h2>Roll</h2><p id="roll-angle">-</p></article>
       <article class="card"><h2>Pitch</h2><p id="pitch-angle">-</p></article>
       <article class="card"><h2>Yaw</h2><p id="yaw-angle">-</p></article>
-      <article class="card"><h2>Position X</h2><p id="pos-x">-</p></article>
-      <article class="card"><h2>Position Y</h2><p id="pos-y">-</p></article>
-      <article class="card"><h2>Distance base</h2><p id="pos-dist">-</p></article>
+      <article class="card"><h2>Accélération X</h2><p id="acc-x">-</p></article>
+      <article class="card"><h2>Accélération Y</h2><p id="acc-y">-</p></article>
+      <article class="card"><h2>Accélération Z</h2><p id="acc-z">-</p></article>
+      <article class="card"><h2>Norme accélération</h2><p id="acc-total">-</p></article>
+      <article class="card"><h2>Accélération dynamique</h2><p id="acc-dynamic">-</p></article>
+      <article class="card"><h2>Position X indicative</h2><p id="pos-x">-</p></article>
+      <article class="card"><h2>Position Y indicative</h2><p id="pos-y">-</p></article>
+      <article class="card"><h2>Position Z indicative</h2><p id="pos-z">-</p></article>
+      <article class="card"><h2>Vitesse estimée</h2><p id="motion-speed">-</p></article>
+      <article class="card"><h2>État mouvement</h2><p id="motion-state">-</p></article>
     </section>
 
     <section class="chart-grid">
@@ -53,8 +61,12 @@
         <canvas id="chart-angles" width="900" height="320"></canvas>
       </article>
       <article class="panel panel-wide">
-        <h3>Position relative XY estimée (m)</h3>
-        <canvas id="chart-xy" width="900" height="340"></canvas>
+        <h3>Accélération filtrée (g)</h3>
+        <canvas id="chart-acceleration" width="900" height="340"></canvas>
+      </article>
+      <article class="panel panel-wide">
+        <h3>Trajectoire XY indicative à court terme (m)</h3>
+        <canvas id="chart-position" width="900" height="340"></canvas>
       </article>
       <article class="panel panel-wide">
         <h3>Cap (Yaw, °)</h3>
@@ -62,7 +74,7 @@
       </article>
     </section>
     <p class="estimate-note">
-      Estimation basée uniquement sur le gyroscope: utile pour tendance court terme, dérive cumulative possible sans fusion capteurs.
+      La position utilise une intégration courte durée avec détection d'immobilité (ZUPT). Elle reste indicative sans GPS, UWB ou autre référence externe.
     </p>
 
     <section class="status-row">

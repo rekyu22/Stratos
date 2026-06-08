@@ -10,6 +10,17 @@ let modeOverrideOnce = null;
 let sampleBuffer = [];
 let lastFrameId = null;
 let gyroBias = { gyr_x: 0, gyr_y: 0, gyr_z: 0 };
+let accelBaseline = { acc_x: 0, acc_y: 0, acc_z: 0 };
+let imuTareComplete = false;
+let positionResetTimestamp = null;
+
+const FILTER_ALPHA = 0.28;
+const GYRO_DEADZONE_DPS = 0.4;
+const GRAVITY_ADAPT_ALPHA = 0.035;
+const ACCEL_DEADZONE_G = 0.035;
+const STATIONARY_ACCEL_G = 0.07;
+const STATIONARY_GYRO_DPS = 2.0;
+const STATIONARY_FRAMES = 4;
 
 function fmt(value, decimals = 3, unit = "") {
   if (value === null || value === undefined || !Number.isFinite(value)) {
@@ -79,6 +90,9 @@ function minSpanForUnit(unit) {
   if (unit === "°") {
     return 2.0;
   }
+  if (unit === "g") {
+    return 0.05;
+  }
   return 0.1;
 }
 
@@ -91,20 +105,74 @@ function toTimestampMs(sample) {
   return Number.isFinite(value) ? value : null;
 }
 
-function calibrateSample(sample) {
-  if (!sample) {
-    return sample;
+function applyDeadzone(value, threshold) {
+  if (!Number.isFinite(value)) {
+    return value;
   }
-  return {
-    ...sample,
-    gyr_x: Number.isFinite(sample.gyr_x) ? sample.gyr_x - gyroBias.gyr_x : sample.gyr_x,
-    gyr_y: Number.isFinite(sample.gyr_y) ? sample.gyr_y - gyroBias.gyr_y : sample.gyr_y,
-    gyr_z: Number.isFinite(sample.gyr_z) ? sample.gyr_z - gyroBias.gyr_z : sample.gyr_z,
-  };
+  return Math.abs(value) < threshold ? 0 : value;
 }
 
-function calibratedSamples(samples) {
-  return (samples || []).map((sample) => calibrateSample(sample));
+function filteredSamples(samples) {
+  const result = [];
+  let previous = null;
+  let gravity = { ...accelBaseline };
+
+  for (const sample of samples || []) {
+    const gyroX = Number.isFinite(sample.gyr_x)
+      ? applyDeadzone(sample.gyr_x - gyroBias.gyr_x, GYRO_DEADZONE_DPS)
+      : sample.gyr_x;
+    const gyroY = Number.isFinite(sample.gyr_y)
+      ? applyDeadzone(sample.gyr_y - gyroBias.gyr_y, GYRO_DEADZONE_DPS)
+      : sample.gyr_y;
+    const gyroZ = Number.isFinite(sample.gyr_z)
+      ? applyDeadzone(sample.gyr_z - gyroBias.gyr_z, GYRO_DEADZONE_DPS)
+      : sample.gyr_z;
+    const gyroSpeed = [gyroX, gyroY, gyroZ].every(Number.isFinite)
+      ? Math.sqrt(gyroX ** 2 + gyroY ** 2 + gyroZ ** 2)
+      : Infinity;
+
+    if (
+      gyroSpeed < STATIONARY_GYRO_DPS &&
+      Number.isFinite(sample.acc_x) &&
+      Number.isFinite(sample.acc_y) &&
+      Number.isFinite(sample.acc_z)
+    ) {
+      gravity.acc_x += GRAVITY_ADAPT_ALPHA * (sample.acc_x - gravity.acc_x);
+      gravity.acc_y += GRAVITY_ADAPT_ALPHA * (sample.acc_y - gravity.acc_y);
+      gravity.acc_z += GRAVITY_ADAPT_ALPHA * (sample.acc_z - gravity.acc_z);
+    }
+
+    const calibrated = {
+      ...sample,
+      gyr_x: gyroX,
+      gyr_y: gyroY,
+      gyr_z: gyroZ,
+      acc_x_dynamic: Number.isFinite(sample.acc_x)
+        ? applyDeadzone(sample.acc_x - gravity.acc_x, ACCEL_DEADZONE_G)
+        : null,
+      acc_y_dynamic: Number.isFinite(sample.acc_y)
+        ? applyDeadzone(sample.acc_y - gravity.acc_y, ACCEL_DEADZONE_G)
+        : null,
+      acc_z_dynamic: Number.isFinite(sample.acc_z)
+        ? applyDeadzone(sample.acc_z - gravity.acc_z, ACCEL_DEADZONE_G)
+        : null,
+    };
+
+    for (const field of [
+      "gyr_x", "gyr_y", "gyr_z",
+      "acc_x", "acc_y", "acc_z",
+      "acc_x_dynamic", "acc_y_dynamic", "acc_z_dynamic",
+    ]) {
+      const value = calibrated[field];
+      if (previous && Number.isFinite(value) && Number.isFinite(previous[field])) {
+        calibrated[field] = previous[field] + FILTER_ALPHA * (value - previous[field]);
+      }
+    }
+
+    result.push(calibrated);
+    previous = calibrated;
+  }
+  return result;
 }
 
 function downsample(samples, maxPoints = RENDER_MAX_POINTS) {
@@ -124,7 +192,7 @@ function downsample(samples, maxPoints = RENDER_MAX_POINTS) {
   return result;
 }
 
-function tareGyro() {
+function tareImu() {
   const valid = sampleBuffer
     .filter(
       (sample) =>
@@ -143,7 +211,33 @@ function tareGyro() {
     gyr_y: valid.reduce((sum, sample) => sum + sample.gyr_y, 0) / valid.length,
     gyr_z: valid.reduce((sum, sample) => sum + sample.gyr_z, 0) / valid.length,
   };
-  return `Gyro tare: X ${gyroBias.gyr_x.toFixed(2)} / Y ${gyroBias.gyr_y.toFixed(2)} / Z ${gyroBias.gyr_z.toFixed(2)} °/s`;
+
+  const validAccel = sampleBuffer
+    .filter(
+      (sample) =>
+        Number.isFinite(sample.acc_x) &&
+        Number.isFinite(sample.acc_y) &&
+        Number.isFinite(sample.acc_z)
+    )
+    .slice(-20);
+  if (validAccel.length > 0) {
+    accelBaseline = {
+      acc_x: validAccel.reduce((sum, sample) => sum + sample.acc_x, 0) / validAccel.length,
+      acc_y: validAccel.reduce((sum, sample) => sum + sample.acc_y, 0) / validAccel.length,
+      acc_z: validAccel.reduce((sum, sample) => sum + sample.acc_z, 0) / validAccel.length,
+    };
+  }
+
+  imuTareComplete = true;
+  const latest = sampleBuffer[sampleBuffer.length - 1];
+  positionResetTimestamp = latest ? toTimestampMs(latest) : Date.now();
+  return `IMU tarée sur ${valid.length} trames`;
+}
+
+function resetPosition() {
+  const latest = sampleBuffer[sampleBuffer.length - 1];
+  positionResetTimestamp = latest ? toTimestampMs(latest) : Date.now();
+  return "Position relative réinitialisée";
 }
 
 function drawNoData(ctx, left, top) {
@@ -437,10 +531,6 @@ function buildGyroEstimate(samples) {
   let rollDeg = 0.0;
   let pitchDeg = 0.0;
   let yawDeg = 0.0;
-  let posX = 0.0;
-  let posY = 0.0;
-  let velX = 0.0;
-  let velY = 0.0;
   let lastTs = null;
   let gyroCount = 0;
 
@@ -464,19 +554,6 @@ function buildGyroEstimate(samples) {
       rollDeg += gxr * dt;
       pitchDeg += gyr * dt;
       yawDeg = normalizeAngleDeg(yawDeg + gzr * dt);
-
-      const rollRad = (clamp(rollDeg, -80, 80) * Math.PI) / 180.0;
-      const pitchRad = (clamp(pitchDeg, -80, 80) * Math.PI) / 180.0;
-
-      const ax = clamp(9.80665 * Math.tan(pitchRad), -6.0, 6.0);
-      const ay = clamp(-9.80665 * Math.tan(rollRad), -6.0, 6.0);
-
-      const damping = Math.exp(-0.45 * dt);
-      velX = (velX + ax * dt) * damping;
-      velY = (velY + ay * dt) * damping;
-
-      posX += velX * dt;
-      posY += velY * dt;
       gyroCount += 1;
     }
 
@@ -485,8 +562,6 @@ function buildGyroEstimate(samples) {
       roll_deg: hasGyro ? rollDeg : null,
       pitch_deg: hasGyro ? pitchDeg : null,
       yaw_deg: hasGyro ? yawDeg : null,
-      pos_x_m: hasGyro ? posX : null,
-      pos_y_m: hasGyro ? posY : null,
     });
 
     if (currentTs !== null) {
@@ -498,6 +573,89 @@ function buildGyroEstimate(samples) {
     samples: derived,
     hasGyroData: gyroCount > 0,
     latest: derived.length > 0 ? derived[derived.length - 1] : null,
+  };
+}
+
+function buildMotionEstimate(samples) {
+  const derived = [];
+  let position = { x: 0, y: 0, z: 0 };
+  let velocity = { x: 0, y: 0, z: 0 };
+  let lastTs = null;
+  let stationaryCount = 0;
+
+  for (const sample of samples || []) {
+    const currentTs = toTimestampMs(sample);
+    if (positionResetTimestamp !== null && currentTs !== null && currentTs < positionResetTimestamp) {
+      continue;
+    }
+
+    let dt = 0.1;
+    if (lastTs !== null && currentTs !== null) {
+      dt = clamp((currentTs - lastTs) / 1000.0, 0.01, 0.25);
+    }
+
+    const dynamic = [
+      sample.acc_x_dynamic,
+      sample.acc_y_dynamic,
+      sample.acc_z_dynamic,
+    ];
+    const hasAccel = dynamic.every(Number.isFinite);
+    const accelNorm = hasAccel
+      ? Math.sqrt(dynamic.reduce((sum, value) => sum + value * value, 0))
+      : Infinity;
+    const gyroSpeed = gyroMagnitude(sample);
+    const stationaryCandidate =
+      accelNorm < STATIONARY_ACCEL_G &&
+      Number.isFinite(gyroSpeed) &&
+      gyroSpeed < STATIONARY_GYRO_DPS;
+
+    stationaryCount = stationaryCandidate ? stationaryCount + 1 : 0;
+    const stationary = stationaryCount >= STATIONARY_FRAMES;
+
+    if (hasAccel && !stationary) {
+      const acceleration = {
+        x: clamp(dynamic[0] * 9.80665, -20, 20),
+        y: clamp(dynamic[1] * 9.80665, -20, 20),
+        z: clamp(dynamic[2] * 9.80665, -20, 20),
+      };
+      velocity.x += acceleration.x * dt;
+      velocity.y += acceleration.y * dt;
+      velocity.z += acceleration.z * dt;
+
+      const damping = Math.exp(-0.18 * dt);
+      velocity.x *= damping;
+      velocity.y *= damping;
+      velocity.z *= damping;
+
+      position.x += velocity.x * dt;
+      position.y += velocity.y * dt;
+      position.z += velocity.z * dt;
+    } else if (stationary) {
+      velocity = { x: 0, y: 0, z: 0 };
+    }
+
+    const speed = Math.sqrt(
+      velocity.x ** 2 +
+      velocity.y ** 2 +
+      velocity.z ** 2
+    );
+    derived.push({
+      timestamp: sample.timestamp,
+      pos_x_m: position.x,
+      pos_y_m: position.y,
+      pos_z_m: position.z,
+      speed_mps: speed,
+      stationary,
+    });
+
+    if (currentTs !== null) {
+      lastTs = currentTs;
+    }
+  }
+
+  return {
+    samples: derived,
+    latest: derived.length ? derived[derived.length - 1] : null,
   };
 }
 
@@ -534,11 +692,19 @@ function updateView(status, latest, samples) {
     setText("mode-label", `Mode: live websocket [${mode}]${detail}`);
   }
 
-  const displaySamples = calibratedSamples(samples || []);
+  if (!imuTareComplete && (samples || []).length >= 20) {
+    tareImu();
+  }
+
+  const displaySamples = filteredSamples(samples || []);
   const renderSamples = downsample(displaySamples);
-  const displayLatest = calibrateSample(latest);
+  const displayLatest = displaySamples.length
+    ? displaySamples[displaySamples.length - 1]
+    : latest;
   const derived = buildGyroEstimate(renderSamples);
+  const motion = buildMotionEstimate(renderSamples);
   const latestDerived = derived.latest;
+  const latestMotion = motion.latest;
 
   if (displayLatest) {
     const speedDps = gyroMagnitude(displayLatest);
@@ -547,18 +713,39 @@ function updateView(status, latest, samples) {
     setText("gyro-z", fmt(displayLatest.gyr_z, 2, " °/s"));
     setText("gyro-speed", fmt(speedDps, 2, " °/s"));
     setText("gyro-stability", gyroStabilityLabel(speedDps));
+
+    const accValues = [displayLatest.acc_x, displayLatest.acc_y, displayLatest.acc_z];
+    const accTotal = accValues.every(Number.isFinite)
+      ? Math.sqrt(accValues.reduce((sum, value) => sum + value * value, 0))
+      : null;
+    const dynamicValues = [
+      displayLatest.acc_x_dynamic,
+      displayLatest.acc_y_dynamic,
+      displayLatest.acc_z_dynamic,
+    ];
+    const accDynamic = dynamicValues.every(Number.isFinite)
+      ? Math.sqrt(dynamicValues.reduce((sum, value) => sum + value * value, 0))
+      : null;
+
+    setText("acc-x", fmt(displayLatest.acc_x, 3, " g"));
+    setText("acc-y", fmt(displayLatest.acc_y, 3, " g"));
+    setText("acc-z", fmt(displayLatest.acc_z, 3, " g"));
+    setText("acc-total", fmt(accTotal, 3, " g"));
+    setText("acc-dynamic", fmt(accDynamic, 3, " g"));
   }
 
   if (latestDerived) {
-    const px = latestDerived.pos_x_m;
-    const py = latestDerived.pos_y_m;
-    const dist = Number.isFinite(px) && Number.isFinite(py) ? Math.sqrt(px * px + py * py) : null;
     setText("roll-angle", fmt(latestDerived.roll_deg, 1, " °"));
     setText("pitch-angle", fmt(latestDerived.pitch_deg, 1, " °"));
     setText("yaw-angle", fmt(latestDerived.yaw_deg, 1, " °"));
-    setText("pos-x", fmt(px, 2, " m"));
-    setText("pos-y", fmt(py, 2, " m"));
-    setText("pos-dist", fmt(dist, 2, " m"));
+  }
+
+  if (latestMotion) {
+    setText("pos-x", fmt(latestMotion.pos_x_m, 3, " m"));
+    setText("pos-y", fmt(latestMotion.pos_y_m, 3, " m"));
+    setText("pos-z", fmt(latestMotion.pos_z_m, 3, " m"));
+    setText("motion-speed", fmt(latestMotion.speed_mps, 3, " m/s"));
+    setText("motion-state", latestMotion.stationary ? "Immobile" : "Mouvement");
   }
 
   drawMultiSeries(
@@ -584,7 +771,17 @@ function updateView(status, latest, samples) {
   );
 
   drawSeries("chart-yaw", derived.samples, "yaw_deg", "#ffd479", "°");
-  drawTrajectory("chart-xy", derived.samples, "pos_x_m", "pos_y_m", "m");
+  drawMultiSeries(
+    "chart-acceleration",
+    renderSamples,
+    [
+      { name: "X", field: "acc_x", color: "#63b3ff" },
+      { name: "Y", field: "acc_y", color: "#4fe2b5" },
+      { name: "Z", field: "acc_z", color: "#ffca66" },
+    ],
+    "g"
+  );
+  drawTrajectory("chart-position", motion.samples, "pos_x_m", "pos_y_m", "m");
 
   if (!derived.hasGyroData) {
     setHealth("health-nav", "Navigation gyro", "ABSENTE", "bad");
@@ -664,6 +861,10 @@ async function switchSource(mode) {
   replayMode = false;
   sampleBuffer = [];
   lastFrameId = null;
+  gyroBias = { gyr_x: 0, gyr_y: 0, gyr_z: 0 };
+  accelBaseline = { acc_x: 0, acc_y: 0, acc_z: 0 };
+  imuTareComplete = false;
+  positionResetTimestamp = null;
   connectLive();
 }
 
@@ -829,10 +1030,20 @@ function trimSampleBuffer() {
 }
 
 function initControls() {
+  const resetPositionBtn = document.getElementById("reset-position-btn");
+  if (resetPositionBtn) {
+    resetPositionBtn.addEventListener("click", () => {
+      const message = resetPosition();
+      const latest = sampleBuffer.length ? sampleBuffer[sampleBuffer.length - 1] : null;
+      updateView(replayStatus(sampleBuffer), latest, sampleBuffer);
+      setText("mode-label", message);
+    });
+  }
+
   const tareBtn = document.getElementById("tare-gyro-btn");
   if (tareBtn) {
     tareBtn.addEventListener("click", () => {
-      const message = tareGyro();
+      const message = tareImu();
       const latest = sampleBuffer.length ? sampleBuffer[sampleBuffer.length - 1] : null;
       updateView(replayStatus(sampleBuffer), latest, sampleBuffer);
       setText("mode-label", message);
