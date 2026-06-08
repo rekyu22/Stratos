@@ -31,6 +31,8 @@ class StratosFrame:
     temp_bmp:  Optional[float]
     altitude:  Optional[float]
     v_bat:     Optional[float]
+    protocol:  str = "stratos31"
+    id_modulus: int = 65536
 
 
 def _is_absent(raw_value: int) -> bool:
@@ -78,6 +80,8 @@ def parse_frame(raw: bytes) -> Optional[StratosFrame]:
             temp_bmp=None,
             altitude=None,
             v_bat=None,
+            protocol="gyro10",
+            id_modulus=256,
         )
 
     if len(raw) == LEGACY_SHORT_FRAME_LENGTH:
@@ -97,6 +101,8 @@ def parse_frame(raw: bytes) -> Optional[StratosFrame]:
             temp_bmp=None,
             altitude=None,
             v_bat=None,
+            protocol="legacy12",
+            id_modulus=65536,
         )
 
     if len(raw) != FRAME_LENGTH:
@@ -137,4 +143,6 @@ def parse_frame(raw: bytes) -> Optional[StratosFrame]:
         temp_bmp=temp_bmp,
         altitude=altitude,
         v_bat=v_bat,
+        protocol="stratos31",
+        id_modulus=65536,
     )

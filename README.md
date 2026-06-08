@@ -58,20 +58,24 @@ $env:STRATOS_SERIAL_PORT="COM4"
 python run_web.py
 ```
 
-## Format trame gyro
+## Formats de trame
 
-La station lit en priorité la trame gyro courte de 10 octets, big-endian :
+Le firmware réel envoie la trame STRATOS complète de 31 octets, big-endian. Elle contient l'ID `uint16`, l'accéléromètre, le gyroscope, la température IMU et les champs optionnels baromètre/batterie. Les champs absents sont décodés en `None`.
+
+La station conserve aussi la compatibilité avec la trame gyro courte de 10 octets :
 
 ```text
 AA ID GYR_X_H GYR_X_L GYR_Y_H GYR_Y_L GYR_Z_H GYR_Z_L CHECKSUM 55
 ```
 
-- `ID` : compteur `uint8`, rollover `0..255`
+- `ID` : compteur `uint8`, rollover `0..255` pour le format court
 - `GYR_X/Y/Z` : `int16` big-endian en `0,1 °/s`, conversion `/ 10`
 - `CHECKSUM` : XOR des octets `1..7`
 - cadence attendue : `10 Hz`
 
-L'IHM affiche uniquement les valeurs gyroscope et les estimations derivees : rotation, roll, pitch, yaw, position XY relative et distance base. Le bouton `Tarer gyro` moyenne les 20 dernieres trames valides et soustrait ce biais aux affichages.
+L'auto-détection valide longueur, marqueurs et checksum avant extraction. La détection des pertes utilise un rollover `65536` pour la trame 31 octets et `256` pour la trame gyro courte.
+
+L'IHM affiche uniquement les valeurs gyroscope et les estimations dérivées : rotation, roll, pitch, yaw, position XY relative et distance base. Le bouton `Tarer gyro` moyenne les 20 dernières trames valides et soustrait ce biais aux affichages.
 
 ## Variables d'environnement
 

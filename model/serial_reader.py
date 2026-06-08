@@ -1,5 +1,5 @@
 from typing import Optional
-from model.protocol import ETX, FRAME_LENGTH, GYRO_FRAME_LENGTH, LEGACY_SHORT_FRAME_LENGTH, STX
+from model.protocol import FRAME_LENGTH, GYRO_FRAME_LENGTH, LEGACY_SHORT_FRAME_LENGTH, STX, parse_frame
 
 try:
     import serial
@@ -50,16 +50,16 @@ class SerialReader:
             if stx_index > 0:
                 del self._buffer[:stx_index]
 
-            if len(self._buffer) >= GYRO_FRAME_LENGTH:
-                candidate = bytes(self._buffer[:GYRO_FRAME_LENGTH])
-                if candidate[-1] == ETX:
-                    del self._buffer[:GYRO_FRAME_LENGTH]
-                    return candidate
-
             if len(self._buffer) >= FRAME_LENGTH:
                 candidate = bytes(self._buffer[:FRAME_LENGTH])
-                if candidate[-1] == ETX:
+                if parse_frame(candidate) is not None:
                     del self._buffer[:FRAME_LENGTH]
+                    return candidate
+
+            if len(self._buffer) >= GYRO_FRAME_LENGTH:
+                candidate = bytes(self._buffer[:GYRO_FRAME_LENGTH])
+                if parse_frame(candidate) is not None:
+                    del self._buffer[:GYRO_FRAME_LENGTH]
                     return candidate
 
             if len(self._buffer) >= LEGACY_SHORT_FRAME_LENGTH and self._looks_like_legacy_short():

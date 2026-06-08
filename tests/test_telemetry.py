@@ -8,6 +8,7 @@ from model.serial_reader import SerialReader
 VALID_FRAME_HEX = "AA002A000AFFF603E80005FFFB000000DC00018A0A08AC000000960F3C9F55"
 INVALID_CHECKSUM_FRAME_HEX = "AA002A000AFFF603E80005FFFB000000DC00018A0A08AC000000960F3C6B55"
 LEGACY_SHORT_FRAME_HEX = "AA7779FFFFFFFFFFFFFFFFFF"
+REAL_FIRMWARE_FRAME_HEX = "AA01ECF3F902E708E7FFE00054000B01AFFFFFFFFFFFFF7FFFFFFFFFFF8355"
 
 
 def _xor(payload: bytes) -> int:
@@ -86,6 +87,22 @@ class TestTelemetryParser(unittest.TestCase):
         self.assertAlmostEqual(frame.gyr_z, 25.0)
         self.assertIsNone(frame.v_bat)
 
+    def test_parse_real_31_byte_firmware_frame(self) -> None:
+        frame = parse_frame(bytes.fromhex(REAL_FIRMWARE_FRAME_HEX))
+        self.assertIsNotNone(frame)
+        assert frame is not None
+        self.assertEqual(frame.protocol, "stratos31")
+        self.assertEqual(frame.id_modulus, 65536)
+        self.assertEqual(frame.frame_id, 492)
+        self.assertAlmostEqual(frame.gyr_x, -3.2)
+        self.assertAlmostEqual(frame.gyr_y, 8.4)
+        self.assertAlmostEqual(frame.gyr_z, 1.1)
+        self.assertAlmostEqual(frame.temp_imu, 43.1)
+        self.assertIsNone(frame.pression)
+        self.assertIsNone(frame.temp_bmp)
+        self.assertIsNone(frame.altitude)
+        self.assertIsNone(frame.v_bat)
+
     def test_reject_gyro_short_frame_bad_checksum(self) -> None:
         raw = bytearray(_build_gyro_frame(frame_id=42, gyr_x_raw=15, gyr_y_raw=-7, gyr_z_raw=250))
         raw[8] ^= 0x01
@@ -148,6 +165,25 @@ class TestTelemetryParser(unittest.TestCase):
         extracted_2 = reader._extract_frame()
         self.assertEqual(extracted_1, raw_1)
         self.assertEqual(extracted_2, raw_2)
+
+    def test_serial_reader_prioritizes_valid_31_byte_frame(self) -> None:
+        raw = _build_frame(
+            frame_id=512,
+            acc_x_raw=100,
+            acc_y_raw=200,
+            acc_z_raw=300,
+            gyr_x_raw=0x5500,
+            gyr_y_raw=10,
+            gyr_z_raw=20,
+            temp_imu_raw=430,
+            pression_raw=0xFFFFFFFF,
+            temp_bmp_raw=-1,
+            altitude_raw=0x7FFFFFFF,
+            v_bat_raw=0xFFFF,
+        )
+        reader = SerialReader(port="TEST")
+        reader._buffer = bytearray(raw)
+        self.assertEqual(reader._extract_frame(), raw)
 
 
 if __name__ == "__main__":
