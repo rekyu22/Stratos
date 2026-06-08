@@ -185,6 +185,17 @@ class TestTelemetryParser(unittest.TestCase):
         reader._buffer = bytearray(raw)
         self.assertEqual(reader._extract_frame(), raw)
 
+    def test_serial_reader_keeps_fragmented_31_byte_frame(self) -> None:
+        raw = bytes.fromhex(REAL_FIRMWARE_FRAME_HEX)
+        reader = SerialReader(port="TEST")
+        reader._buffer = bytearray(raw[:12])
+
+        self.assertIsNone(reader._extract_frame())
+        self.assertEqual(reader._buffer, bytearray(raw[:12]))
+
+        reader._buffer.extend(raw[12:])
+        self.assertEqual(reader._extract_frame(), raw)
+
 
 if __name__ == "__main__":
     unittest.main()

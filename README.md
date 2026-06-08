@@ -81,9 +81,10 @@ L'IHM affiche uniquement les valeurs gyroscope et les estimations dérivées : r
 
 - `STRATOS_SOURCE` : `serial` (défaut), `sim` ou `auto`
 - `STRATOS_SIM_HZ` : fréquence simulation, défaut `10.0`
-- `STRATOS_SERIAL_PORT` : port série (`COM4`, `/dev/ttyUSB0`, ...)
+- `STRATOS_SERIAL_PORT` : port série (défaut `COM4`; surchargeable avec `/dev/ttyUSB0`, `/dev/cu.*`, ...)
 - `STRATOS_SERIAL_BAUD` : défaut `9600`
 - `STRATOS_SERIAL_TIMEOUT` : défaut `0.05`
+- `STRATOS_LINK_TIMEOUT` : délai maximal sans paquet avant liaison perdue, défaut `1.0` seconde
 - `STRATOS_HISTORY_SIZE` : profondeur historique en mémoire (défaut `600`)
 - `STRATOS_LOG` : `1` pour activer CSV, `0` pour désactiver (défaut)
 - `STRATOS_HOST` : défaut `127.0.0.1`

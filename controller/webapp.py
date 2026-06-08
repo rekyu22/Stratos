@@ -24,13 +24,19 @@ def _build_service() -> TelemetryService:
     mode = os.getenv("STRATOS_SOURCE", "serial").lower()
     with_logger = os.getenv("STRATOS_LOG", "0") == "1"
     logger = TelemetryLogger() if with_logger else None
-    port = os.getenv("STRATOS_SERIAL_PORT")
+    port = os.getenv("STRATOS_SERIAL_PORT", "COM4")
     baud = int(os.getenv("STRATOS_SERIAL_BAUD", "9600"))
     timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "0.05"))
+    link_timeout = float(os.getenv("STRATOS_LINK_TIMEOUT", "1.0"))
     hz = float(os.getenv("STRATOS_SIM_HZ", "10.0"))
     history_size = int(os.getenv("STRATOS_HISTORY_SIZE", "600"))
     source = _build_source(mode=mode, port=port, baud=baud, timeout=timeout, sim_hz=hz)
-    return TelemetryService(source=source, logger=logger, history_size=history_size)
+    return TelemetryService(
+        source=source,
+        logger=logger,
+        history_size=history_size,
+        link_timeout_s=link_timeout,
+    )
 
 
 def _build_source(mode: str, port: str | None, baud: int, timeout: float, sim_hz: float):
@@ -98,7 +104,7 @@ def api_history(points: int = Query(default=300, ge=1, le=2000)) -> Dict[str, An
 
 @app.post("/api/source")
 def api_switch_source(payload: SourceSwitchRequest) -> Dict[str, Any]:
-    default_port = os.getenv("STRATOS_SERIAL_PORT")
+    default_port = os.getenv("STRATOS_SERIAL_PORT", "COM4")
     default_baud = int(os.getenv("STRATOS_SERIAL_BAUD", "9600"))
     default_timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "0.05"))
     default_sim_hz = float(os.getenv("STRATOS_SIM_HZ", "10.0"))
@@ -174,7 +180,7 @@ async def ws_live(websocket: WebSocket) -> None:
     forced_mode = websocket.query_params.get("mode")
 
     if forced_mode:
-        default_port = os.getenv("STRATOS_SERIAL_PORT")
+        default_port = os.getenv("STRATOS_SERIAL_PORT", "COM4")
         default_baud = int(os.getenv("STRATOS_SERIAL_BAUD", "9600"))
         default_timeout = float(os.getenv("STRATOS_SERIAL_TIMEOUT", "0.05"))
         default_sim_hz = float(os.getenv("STRATOS_SIM_HZ", "10.0"))

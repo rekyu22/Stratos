@@ -67,7 +67,9 @@ class SerialReader:
                 del self._buffer[:LEGACY_SHORT_FRAME_LENGTH]
                 return candidate
 
-            if len(self._buffer) < LEGACY_SHORT_FRAME_LENGTH:
+            # A valid 31-byte frame often arrives in several serial reads.
+            # Keep its STX until enough bytes are buffered to validate it.
+            if len(self._buffer) < FRAME_LENGTH:
                 return None
 
             del self._buffer[0]
